@@ -98,6 +98,7 @@ All authored spacing uses a 4px base. Component dimensions are named tokens so i
 | `--rail-width-wide` | `232px` | Desktop hierarchy rail |
 | `--rail-width-medium` | `208px` | Tablet hierarchy rail |
 | `--inspector-width-wide` | `360px` | Desktop inspector |
+| `--skeleton-flow-node-width` | `280px` | Maximum loading flow-node width |
 
 ### Named shell and scroll ownership
 

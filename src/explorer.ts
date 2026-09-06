@@ -146,6 +146,22 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
     host.dataset.scenario = current.scenario; host.dataset.entityId = current.entityId;
     renderBreadcrumbs(host, documents[current.scenario], current.entityId, selectEntity); renderHierarchy(host, documents[current.scenario], current.entityId, query, selectEntity);
     graphCleanup(); graphCleanup = renderGraph(graphHost, document, buildGraphModel(documents[current.scenario], current.entityId), selectEntity); renderStatus(host, current, reason);
+    const selected = mapEntities(documents[current.scenario]).get(current.entityId)!;
+    const boundary = element(document, 'p', 'explorer__boundary');
+    boundary.dataset.entityId = selected.id; boundary.dataset.kind = selected.kind; boundary.dataset.scenario = current.scenario;
+    const kinds = { model: '모델', block: '블록', stage: '단계', operator: '연산자' };
+    for (const [role, text] of [
+      ['scope', `선택한 ${kinds[selected.kind]}의 경계에서`],
+      ['input', '입력은 들어오는 텐서,'],
+      ['output', '출력은 나가는 텐서,'],
+      ['weight', '가중치는 참조하는 매개변수입니다.'],
+    ] as const) {
+      const clause = element(document, 'span', 'explorer__boundary-clause');
+      clause.dataset.boundaryClause = role; clause.textContent = text;
+      if (boundary.childNodes.length > 0) boundary.append(' ');
+      boundary.append(clause);
+    }
+    graphHost.insertBefore(boundary, graphHost.querySelector('.graph-viewport'));
     if (focusKey) {
       const actions = [...host.querySelectorAll<HTMLElement | SVGElement>('[data-focus-key]')];
       const replacement = actions.find(node => node.getAttribute('data-focus-key') === focusKey) ?? actions.find(node => node.getAttribute('data-entity-id') === current.entityId);
