@@ -7,9 +7,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest tests"
+    "test": "vitest tests --exclude '**/*.spec.ts'",
+    "test:e2e": "npm run build -- --base=/web_mamba/ && playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "^26.4.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
