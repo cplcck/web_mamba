@@ -225,7 +225,7 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
   - Failure QA: review worst-case long tensor names, Korean wrapping, mixed dtype lists, empty weights, and reduced-motion state against the design; record corrections before implementation. Evidence: `E/task-3/edge-states.md`.
   - Commit: N.
 
-- [ ] 4. Build real CPU graph and recurrent-state capture
+- [x] 4. Build real CPU graph and recurrent-state capture
   - Recommended task executor category: deep - internal graph/state lifetime and instrumentation require source-grounded C++ work.
   - Files: `tools/capture/CMakeLists.txt`, `tools/capture/main.cpp`, `tools/capture/capture.test.cpp`, and ignored `build/` outputs. Follow the Verified capture contract above; no llama.cpp product-source modifications.
   - Work: link the pinned source in a separate CMake build; CPU only (`n_gpu_layers=0`, no optional GPU/BLAS backend), one compute and batch thread, `n_seq_max=1`, `n_rs_seq=0`, context capacity at least 32, batch/microbatch capacity at least 32, only final input marked for logits. Export configured and effective values.
