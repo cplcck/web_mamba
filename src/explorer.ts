@@ -120,7 +120,7 @@ const isContentAnchor = (hash: string): boolean => hash.length > 1 && !/(?:^#|&)
 
 export function createExplorer(host: HTMLElement, documents: Documents, onSelection: SelectionListener): ExplorerHandle {
   const document = host.ownerDocument, view = document.defaultView;
-  const landingId = documents.prefill.entities.find(entity => entity.kind === 'block')?.id ?? rootOf(documents.prefill).id;
+  const landingId = rootOf(documents.prefill).id;
   const requested = decodeSelectionHash(view?.location.hash ?? ''), initial: ExplorerSelection = requested ? resolveScenarioSelection(requested, requested.scenario, documents) : { scenario: 'prefill', entityId: landingId };
   let current = initial, query = '', graphCleanup = (): void => undefined, destroyed = false;
   let reason: SelectionReason = (requested && requested.entityId !== initial.entityId) || (!requested && view?.location.hash && !isContentAnchor(view.location.hash)) ? 'invalid-route' : 'selected';
@@ -138,7 +138,7 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   evidence.append(evidenceSummary, graphHost);
   const jump = document.createElement('a'); jump.className = 'inspector-jump'; jump.href = '#tensor-inspector'; jump.textContent = '선택 항목의 tensor inspector ↓';
   jump.addEventListener('click', event => { event.preventDefault(); const inspector = document.getElementById('tensor-inspector'); inspector?.focus({ preventScroll: true }); inspector?.scrollIntoView({ block: 'start' }); });
-  host.replaceChildren(breadcrumbs, hierarchy, blockFlow, evidence, jump, status);
+  host.replaceChildren(breadcrumbs, blockFlow, hierarchy, evidence, jump, status);
   const render = (): void => {
     if (destroyed) return;
     const active = document.activeElement, focusKey = active && host.contains(active) ? active.getAttribute('data-focus-key') : null;

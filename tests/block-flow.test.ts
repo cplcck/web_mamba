@@ -6,6 +6,17 @@ import { validateDocument } from '../src/schema';
 const document = validateDocument(JSON.parse(readFileSync('public/data/prefill.json', 'utf8')));
 
 describe('representative block context', () => {
+  it('keeps model root free of a chosen block and block detail', () => {
+    // Given / When
+    const context = buildBlockFlowModel(document, 'mamba-130m');
+    // Then
+    expect(context.block).toBeUndefined();
+    expect(context.stage).toBeUndefined();
+    expect(context.stages).toEqual([]);
+    expect(context.operators).toEqual([]);
+    expect(context.architecture.map(node => node.kind === 'blocks' ? 'blocks' : node.entity.id))
+      .toEqual(['model/embedding', 'blocks', 'model/final-normalization', 'model/final-projection']);
+  });
   it('uses the actual block and ordered stage records when selecting block.23', () => {
     // Given / When
     const context = buildBlockFlowModel(document, 'block.23');
@@ -37,10 +48,11 @@ describe('representative block context', () => {
     // Given / When
     const context = buildBlockFlowModel(document, 'model/embedding');
     // Then: model data is not relabeled as block.0.
-    expect(context.block?.id).toBe('block.0');
+    expect(context.block).toBeUndefined();
+    expect(context.stages).toEqual([]);
     expect(context.stage?.id).toBe('model/embedding');
     expect(context.selectedId).toBe('model/embedding');
     expect(context.operators.map(entity => entity.parentId)).toEqual(['model/embedding']);
-    expect(context.modelEntities.map(entity => entity.id)).toEqual(['mamba-130m', 'model/embedding', 'model/final-normalization', 'model/final-projection']);
+    expect(context.root?.id).toBe('mamba-130m');
   });
 });
