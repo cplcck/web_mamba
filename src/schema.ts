@@ -71,8 +71,8 @@ function reference<T>(map: ReadonlyMap<string, T>, id: string, p: string): T {
 
 function tensor(v: unknown, i: number): Tensor {
   const p = `tensors[${i}]`, x = obj(v, p);
-  const native = list(x.nativeShape, p + '.nativeShape').map((n, j) => integer(n, `${p}.nativeShape[${j}]`, true));
-  const logical = list(x.logicalShape, p + '.logicalShape').map((n, j) => integer(n, `${p}.logicalShape[${j}]`, true));
+  const native = list(x.nativeShape, p + '.nativeShape').map((n, j) => integer(n, `${p}.nativeShape[${j}]`));
+  const logical = list(x.logicalShape, p + '.logicalShape').map((n, j) => integer(n, `${p}.logicalShape[${j}]`));
   const strides = list(x.strides, p + '.strides').map((n, j) => integer(n, `${p}.strides[${j}]`));
   const labels = list(x.axisLabels, p + '.axisLabels').map((n, j) => str(n, `${p}.axisLabels[${j}]`));
   if (native.length !== 4 || strides.length !== 4) fail(p, 'nativeShape and strides must have four dimensions');
@@ -84,15 +84,19 @@ function tensor(v: unknown, i: number): Tensor {
   const blockSize = blocks[dtype];
   if (integer(x.numel, p + '.numel') !== numel) fail(p + '.numel', 'does not match logical shape');
   if (integer(x.typeBlockSize, p + '.typeBlockSize') !== blockSize) fail(p + '.typeBlockSize', 'does not match dtype');
-  const ne0 = integer(native[0], p + '.nativeShape[0]', true), nb0 = integer(strides[0], p + '.strides[0]');
+  const ne0 = integer(native[0], p + '.nativeShape[0]'), nb0 = integer(strides[0], p + '.strides[0]');
   if (ne0 % blockSize !== 0) fail(p + '.nativeShape[0]', 'must contain whole dtype blocks');
   const logicalBytes = integer(numel / blockSize * sizes[dtype], p + '.logicalBytes');
   if (integer(x.logicalBytes, p + '.logicalBytes') !== logicalBytes) fail(p + '.logicalBytes', 'does not match dtype payload');
   // ggml.c:1297-1319: exact addressed span, not ggml_nbytes_pad or backend allocation.
-  let span = blockSize === 1 ? sizes[dtype] : integer(ne0 / blockSize * nb0, p + '.strides');
-  for (const [axis, extent] of native.entries()) {
-    if (blockSize !== 1 && axis === 0) continue;
-    span = checkedAdd(span, integer((extent - 1) * integer(strides[axis], p + '.strides'), p + '.strides'), p + '.strides');
+  let span = 0;
+  // ggml_nbytes returns zero before stride arithmetic when any extent is zero.
+  if (numel > 0) {
+    span = blockSize === 1 ? sizes[dtype] : integer(ne0 / blockSize * nb0, p + '.strides');
+    for (const [axis, extent] of native.entries()) {
+      if (blockSize !== 1 && axis === 0) continue;
+      span = checkedAdd(span, integer((extent - 1) * integer(strides[axis], p + '.strides'), p + '.strides'), p + '.strides');
+    }
   }
   const ss = obj(x.storage, p + '.storage');
   const storage: Storage = {

@@ -263,7 +263,7 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
   - Failure QA: tiny synthetic pairs contain missing/extra tensor, wrong squeeze axis, raw rather than transformed A, and unequal omitted output weight. Each fails at a named tensor/metadata field. Evidence: `E/task-6/corruption-tests.txt`.
   - Commit: N.
 
-- [ ] 14. Support observed zero-element tensors in schema
+- [x] 14. Support observed zero-element tensors in schema
   - Recommended task executor category: deep - source-grounded correction of the real capture integration seam.
   - Files: src/schema.ts and focused tests/schema-semantics.test.ts regressions; evidence E/task-14.
   - Discovery: task4 real captures contain 145 prefill and 241 decode zero-element tensors rejected by the currently synthetic-tested schema. Verify representative captured metadata against pinned ggml_nelements/ggml_nbytes before changing validation; do not drop or fabricate actual graph nodes.
