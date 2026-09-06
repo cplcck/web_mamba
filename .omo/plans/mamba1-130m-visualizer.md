@@ -200,7 +200,7 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
   - Failure QA: dependency-injected Hub responses simulate moving main between resolution/download; assert download still uses the first SHA. Tamper an isolated payload copy and assert verification fails without overwriting the canonical snapshot. Evidence: `E/task-1/failures.txt`.
   - Commit: N - no commit authorization.
 
-- [ ] 2. Establish frontend scaffold and executable data contracts
+- [x] 2. Establish frontend scaffold and executable data contracts
   - Recommended task executor category: unspecified-low - bounded TypeScript scaffold and schema work.
   - Files: `package.json`, `package-lock.json`, `index.html`, `tsconfig.json`, `vite.config.ts`, `src/schema.ts`, `tests/data.test.ts`.
   - Work: minimal Vite/vanilla TypeScript with strict checking and Vitest. Implement the Data contract above, safe symbolic dimension arithmetic, range-aware storage accounting, and ID/reference validation. Validate JSON at the browser boundary; no silent coercion or blanket dtype defaults. Tiny synthetic fixtures are test-only and clearly labelled.
