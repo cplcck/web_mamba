@@ -197,7 +197,7 @@ def render(corpus: validation.Corpus, inputs: data.Inputs, report_source: str) -
         "symbolicSupport": {name: json.loads(symbolic_support(name)) for name in captures},
         "publicBudgetBytes": PUBLIC_BUDGET, "supported": {"P": [1], "T": [1, 16], "O": [1], "context": 256, "stateCapacity": 1,
             "backend": "CPU", "dtype": "F32", "offload": False, "threads": 1, "otherConfigurations": "unvalidated"}}
-    source = {k: v for k, v in manifest["source"].items() if k != "path"}
+    source = {k: v for k, v in manifest["source"].items() if k not in ("path", "status")}
     environment = {k: v for k, v in manifest["environment"].items() if k != "pythonExecutable"}
     build = native["identity"]["build"]
     public_provenance = {**header, "repoId": manifest["repoId"], "revision": manifest["revision"],
