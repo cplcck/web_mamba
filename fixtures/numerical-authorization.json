@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "status": "approved",
+  "candidateSha256": "27b3f06221364dbda9b0f73ff3ad0fb5bf2ecda67a8e298a189b47e5c0450440",
+  "configurationHash": "0c852283d106bc42bef5c0efcddf85e6047070cccfb2f3c29e6abf9db0be38e1",
+  "auditSha256": "1f2f02c063a9766df28b979a07d6b0ca429bd92e191694c26b2e8552c47e91b7",
+  "reviewerId": "st_01a07611",
+  "reviewSha256": "d54c68297bb8473735fce98183548043c908d9734a3a7bd1f5a70879d892a8db"
+}

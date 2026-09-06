@@ -1,0 +1,43 @@
+{
+  "auditSha256": "1f2f02c063a9766df28b979a07d6b0ca429bd92e191694c26b2e8552c47e91b7",
+  "authorityInstalledByReviewer": false,
+  "candidateSha256": "27b3f06221364dbda9b0f73ff3ad0fb5bf2ecda67a8e298a189b47e5c0450440",
+  "configurationHash": "0c852283d106bc42bef5c0efcddf85e6047070cccfb2f3c29e6abf9db0be38e1",
+  "decision": "approved",
+  "evidence": [
+    {
+      "bytes": 36607,
+      "path": "/home/cplcck/web_mamba-wt/mamba1-130m-visualizer-integration/.omo/evidence/mamba1-130m-visualizer/task-7/independent-numeric-delta/AdversarialVerify.json",
+      "sha256": "af92af6d9f2f412d2755dda1baa18cedc74970a9ebfc4805ba4762ca44042a6e"
+    },
+    {
+      "bytes": 9697,
+      "path": "/home/cplcck/web_mamba-wt/mamba1-130m-visualizer-integration/.omo/evidence/mamba1-130m-visualizer/task-7/independent-numeric-delta/review.md",
+      "sha256": "345bcb5d59dc0550fccac966a8e8ef0f5fd7eb9e8745ec0efacc3433dcf9c55d"
+    },
+    {
+      "bytes": 38101,
+      "path": "/home/cplcck/web_mamba-wt/mamba1-130m-visualizer-integration/.omo/evidence/mamba1-130m-visualizer/task-7/independent-numeric-delta/identity-reuse.json",
+      "sha256": "627d4462ee917ce2d0eb8d84356a3d5e85702d00aa05038085aaaf585807b471"
+    },
+    {
+      "bytes": 15090,
+      "path": "/home/cplcck/web_mamba-wt/mamba1-130m-visualizer-integration/.omo/evidence/mamba1-130m-visualizer/task-7/independent-numeric-delta/cli-results.json",
+      "sha256": "5b99ab87eb277686a6c2e7a34eb3f0a5a16eb701f43b2da553c0d79bb0e5c748"
+    },
+    {
+      "bytes": 12677,
+      "path": "/home/cplcck/web_mamba-wt/mamba1-130m-visualizer-integration/.omo/evidence/mamba1-130m-visualizer/task-7/independent-numeric-delta/authority-replay.json",
+      "sha256": "6bab303d3dce56bc6575dce94e8cf5d538042ae8d281e33e91d1b22b7137b5f3"
+    },
+    {
+      "bytes": 7054,
+      "path": "/home/cplcck/web_mamba-wt/mamba1-130m-visualizer-integration/.omo/evidence/mamba1-130m-visualizer/task-7/independent-numeric-delta/synthetic-entry.json",
+      "sha256": "2475a52ba881d7aa846c4bf87d450f70e3ab1ba44fc93933fe376f590d282c38"
+    }
+  ],
+  "parentMustAuthorizeFreezeSeparately": true,
+  "reviewerId": "st_01a07611",
+  "schemaVersion": 1,
+  "scope": "task27 NUM-01 independent numerical delta, not final project approval"
+}

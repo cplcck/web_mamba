@@ -223,5 +223,108 @@ class HFScheduleIntegration(unittest.TestCase):
                              [[0, 1, 2, 3], [0, 1, 2, 3], [16]])
 
 
+class NumericalComparison(unittest.TestCase):
+    def test_measures_errors_when_component_bounds_are_explicit(self) -> None:
+        # Given: distinct arrays and independently supplied component bounds.
+        from tools.validate import compare
+        reference = hf.np.array([0, 2, 4], dtype=hf.np.float32)
+        candidate = hf.np.array([0, 3, 2], dtype=hf.np.float32)
+        # When: compare against the explicit envelope.
+        result = compare(reference, candidate, hf.np.array([0, 1, 1]))
+        # Then: real error metrics, not ranking, determine violations.
+        self.assertEqual((result.max_abs, result.nmse, result.violations), (2, 0.25, 1))
+        self.assertFalse(result.accepted)
+
+    def test_stays_unvalidated_when_policy_bounds_are_absent(self) -> None:
+        # Given: identical arrays without a reviewed policy.
+        from tools.validate import compare
+        value = hf.np.array([1, 2], dtype=hf.np.float32)
+        # When: characterize without bounds.
+        result = compare(value, value, None)
+        # Then: exact identity alone cannot authorize release.
+        self.assertIsNone(result.violations)
+        self.assertFalse(result.accepted)
+
+    def test_handles_zero_energy_when_candidate_is_nonzero(self) -> None:
+        # Given: zero energy, nonzero error, ample explicit bounds.
+        from tools.validate import compare
+        reference = hf.np.zeros(2, dtype=hf.np.float32)
+        # When: compare the zero-reference case.
+        result = compare(reference, hf.np.ones(2), hf.np.ones(2))
+        # Then: infinite NMSE still fails regardless of component bounds.
+        self.assertEqual(result.nmse, "infinity")
+        self.assertFalse(result.accepted)
+
+
+    def test_rejects_malformed_arrays_when_shapes_values_or_bounds_are_invalid(self) -> None:
+        from tools.validate import ValidationError, compare
+        # Given: self-contained finite controls and independent malformed cases.
+        good = hf.np.array([0, 2], dtype=hf.np.float32)
+        cases = ((good[:1], good, None, "comparison.shape"),
+                 (good, hf.np.full(2, float("nan")), None, "comparison.finite"),
+                 (good, hf.np.full(2, float("inf")), None, "comparison.finite"),
+                 (good, good, good[:1], "policy.bounds.shape"),
+                 (good, good, -hf.np.ones(2), "policy.bounds.finiteNonnegative"),
+                 (good, good, hf.np.full(2, float("nan")), "policy.bounds.finiteNonnegative"))
+        for reference, candidate, bounds, field in cases:
+            # When / Then: the named invariant rejects the corrupted input.
+            with self.subTest(field=field), self.assertRaises(ValidationError) as caught:
+                compare(reference, candidate, bounds)
+            self.assertEqual(caught.exception.field, field)
+
+    def test_accepts_exact_zero_when_explicit_bounds_are_zero(self) -> None:
+        from tools.validate import compare
+        # Given: an exact zero-reference case with explicitly supplied zero bounds.
+        zero = hf.np.zeros(3, dtype=hf.np.float32)
+        # When: compare with no hidden tolerance.
+        result = compare(zero, zero, zero)
+        # Then: exact-zero energy has NMSE zero and zero component violations.
+        self.assertEqual((result.nmse, result.violations, result.percentiles), (0, 0, (0, 0, 0)))
+        self.assertTrue(result.accepted)
+
+
+    def test_release_exits_nonzero_when_the_reviewed_policy_gate_is_unavailable(self) -> None:
+        # Given: valid retained inputs and an explicitly absent policy, independent of production trust.
+        with tempfile.TemporaryDirectory(prefix="unavailable-policy-") as temporary:
+            directory = Path(temporary)
+            report = directory / "report.json"
+            # When: drive the real CLI past argparse and full ingestion to the policy gate.
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "tools/validate.py"), "--manifest", str(MANIFEST),
+                "--captures", str(ROOT / ".artifacts/task-7/captures"), "--policy", str(directory / "missing.json"),
+                "--out", str(report)], capture_output=True, text=True, timeout=240)
+            # Then: a real completed comparison report remains unvalidated, not an argument error.
+            self.assertEqual((result.returncode, result.stderr), (2, ""))
+            self.assertEqual(json.loads(result.stdout)["status"], "unvalidated")
+            summary = json.loads(report.read_text())
+            self.assertEqual((summary["status"], summary["policySha256"], len(summary["metrics"])), ("unvalidated", None, 404))
+
+
+class ExportMetadata(unittest.TestCase):
+    def test_exports_state_and_symbolic_metadata_when_real_split_capture_is_used(self) -> None:
+        from tools import capture_data, export_web, web_graph
+        # Given: retained canonical arrays, with no model forward or synthetic data.
+        inputs = export_web.verify_inputs(MANIFEST, export_web.AUDIT)
+        run = capture_data.load_native(ROOT / ".artifacts/task-7/captures/canonical-1-llama-split", inputs)
+        # When: derive the proposed public metadata from this capture.
+        state = json.loads(export_web.state_summary(run, "test-prefill", "prefill"))
+        formulas = json.loads(export_web.symbolic_shapes(run.graphs[0]))
+        # Then: exact epochs/hashes and nonconstant Q/O formulas reach the seam.
+        self.assertEqual((state["before"]["position"], state["after"]["position"]), (-1, 15))
+        self.assertEqual(state["after"]["arrays"][0]["sha256"], run.snapshots[1].arrays[0].sha256)
+        self.assertEqual(state["continuity"]["comparedArrays"], 48)
+        by_name = {node.name: node for node in run.graphs[0].nodes}
+        for name, dimension in (("embd", "Q"), ("l_out-23", "O"), ("result_output", "O")):
+            self.assertEqual(formulas[by_name[name].id][2], {"op": "dim", "name": dimension})
+        by_id = {node.id: node for node in run.graphs[0].nodes}
+        gather = by_id[by_name["l_out-23"].src[0]]
+        self.assertEqual(formulas[gather.src[1]][3], {"op": "dim", "name": "O"})
+        weights = {node.name: (0, node.logicalBytes) for node in run.graphs[0].nodes if node.role == "weight"}
+        document = json.loads(web_graph.document(run.graphs[0], web_graph.DocumentIdentity("test-prefill", inputs.gguf_sha, "prefill"), weights))
+        self.assertEqual(document["tensors"][0]["shapeFormula"][2], {"op": "dim", "name": "Q"})
+        self.assertEqual(document["symbolicSupport"]["T"], {"min": 1, "max": 32})
+        self.assertEqual(document["symbolicSupport"]["O"], {"min": 1, "maxDimension": "Q"})
+        self.assertEqual(document["scenario"]["dimensions"], {"P": 1, "T": 16, "Q": 16, "O": 1})
+
+
 if __name__ == "__main__":
     unittest.main()
