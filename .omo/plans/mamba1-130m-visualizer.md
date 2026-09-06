@@ -167,7 +167,8 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
 | 4 | 1,2 | 7 | 5,6 |
 | 5 | 1 | 7 | 4,6 |
 | 6 | 1 | 7 | 4,5 |
-| 7 | 2,4,5,6 | 10,11,12 | 8,9 development only |
+| 14 | 2,4 artifacts | 7 | 4,5,6 verification |
+| 7 | 2,4,5,6,14 | 10,11,12 | 8,9 development only |
 | 8 | 2,3 | 10,11,12 | 7,9 |
 | 9 | 2,3 | 10,11,12 | 7,8 |
 | 10 | 7,8,9 | 11,12 | none |
@@ -238,7 +239,7 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
   - Failure QA: capture tests exercise empty-cache single-token run (must not label it cached decode), invalid token ID, wrong position, and missing tensor dependencies; exporter rejects incomplete capture. Compare observer-enabled versus disabled runs to prove observation does not alter logits/state. Evidence: `E/task-4/capture-failures.txt`.
   - Commit: N.
 
-- [ ] 5. Generate the pinned HF F32 reference schedules
+- [x] 5. Generate the pinned HF F32 reference schedules
   - Recommended task executor category: deep - runtime/cache oracle integration must preserve inference semantics.
   - Files: `tools/reference_hf.py`, HF harness cases in `tests/test_validation.py`; task 5 owns these cases before task 7 adds comparator cases.
   - Work: load the local manifest snapshot only, force CPU F32/eval/inference mode, no optional fused Mamba implementation. Run fresh and split schedules on the same fixtures as task 4, retaining a separate cache per split run. Export final and prefill logits with explicit input index, token ID, vocabulary axis, and HF runtime identity. Deep-copy mutable cache snapshots before the next call.
@@ -261,6 +262,17 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
   - Happy QA: full canonical audit with counts and mapped tensor hashes. Evidence: `E/task-6/artifact-audit.json`.
   - Failure QA: tiny synthetic pairs contain missing/extra tensor, wrong squeeze axis, raw rather than transformed A, and unequal omitted output weight. Each fails at a named tensor/metadata field. Evidence: `E/task-6/corruption-tests.txt`.
   - Commit: N.
+
+- [ ] 14. Support observed zero-element tensors in schema
+  - Recommended task executor category: deep - source-grounded correction of the real capture integration seam.
+  - Files: src/schema.ts and focused tests/schema-semantics.test.ts regressions; evidence E/task-14.
+  - Discovery: task4 real captures contain 145 prefill and 241 decode zero-element tensors rejected by the currently synthetic-tested schema. Verify representative captured metadata against pinned ggml_nelements/ggml_nbytes before changing validation; do not drop or fabricate actual graph nodes.
+  - Work: minimally admit legitimate empty tensor shapes/layouts and exact zero-element byte semantics while preserving alias, storage, boundary, dtype and nonempty layout invariants. Keep canonical scenario P/T/O/Q constraints strict; zero tensor extent is not zero batch/token count.
+  - Dependencies: 2 and representative task4 capture artifacts; blocks 7. Can run beside independent verification of 4-6; ownership is disjoint.
+  - Acceptance: meaningful RED from actual valid empty metadata; shipped nonempty plus empty layout regressions and malformed negative/overflow cases pass once; unsuppressed typecheck/build pass; direct import accepts observed empty layouts and rejects malformed counterparts. Existing 55 tests remain preserved.
+  - Happy QA: recheck representative real native tensor shapes/dtypes/ne/nb/nbytes for prefill and decode without changing capture source/arrays. Failure QA: negative extents, invalid byte spans and P/O regression still reject with intended invariants.
+  - Evidence: E/task-14/DoneClaim.json and independent verification. No tolerant fallback, metadata-node removal, dependency change or guessed byte values.
+  - Commit: Y - authorized verified local increment only.
 
 - [ ] 7. Validate all schedules and export canonical website data
   - Recommended task executor category: deep - cross-runtime numeric diagnosis and provenance-bound export.
