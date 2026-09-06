@@ -177,7 +177,7 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
 ## Todos
 > Implementation + Test = ONE todo. Never separate.
 
-- [ ] 13. Establish authorized local Git baseline and phase worktree
+- [x] 13. Establish authorized local Git baseline and phase worktree
   - Recommended task executor category: quick - execution infrastructure only.
   - Scope: preserve existing files; stage only the selected plan for the first baseline commit. Use local branch main and existing origin. Create the Foundation branch/worktree at `/home/cplcck/web_mamba-wt/mamba1-130m-visualizer-foundation`. Record baseline SHA and worktree path in Boulder.
   - Dependencies: none; blocks 1,2,3. Authorization: user's explicit local commit approval.
@@ -186,7 +186,7 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
   - Failure QA: confirm existing unrelated `.omo` artifacts are not staged, committed, or deleted. No blanket `git add .` or global identity edits.
   - Commit: Y - local baseline only; subsequent verified commits follow existing history.
 
-- [ ] 1. Prepare immutable model inputs and provenance
+- [x] 1. Prepare immutable model inputs and provenance
   - Recommended task executor category: deep - Python artifact preparation spans revision, conversion, and reproducibility contracts.
   - Files: `tools/prepare_model.py`, `tools/requirements.txt`, `tools/requirements.lock`, `fixtures/token-ids.json`, `fixtures/calibration-ids.json`, `tests/test_prepare_model.py`, `.gitignore`.
   - Work: use an isolated `.venv`, pin compatible Python dependencies and their hashes, verify baseline commit, capture pre-existing source status, resolve HF main once, then call `snapshot_download(revision=resolved_sha)` for the entire tree into the SHA-specific directory. Hash payload excluding HF cache metadata. Invoke the pinned converter on the local directory and persist the output hash. Existing same-SHA snapshots are verified, not blindly trusted. A later ordinary run uses the stored SHA; explicit `--refresh-revision` is the only refresh path.

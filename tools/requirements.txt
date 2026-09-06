@@ -1,0 +1,10 @@
+# Python 3.10, Linux x86_64; install requirements.lock with --require-hashes.
+# GGUF Python code is imported from the verified llama.cpp baseline, not PyPI.
+--extra-index-url https://download.pytorch.org/whl/cpu
+huggingface-hub==0.36.2
+numpy==1.26.4
+protobuf==4.25.9
+safetensors==0.8.0
+sentencepiece==0.2.2
+torch==2.11.0+cpu
+transformers==4.57.6

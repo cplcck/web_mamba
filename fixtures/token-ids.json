@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "synthetic-token-ids",
+  "sequenceId": 0,
+  "tokenIds": [1, 42, 314, 2718, 7, 99, 1024, 17, 2048, 13, 512, 9, 4096, 23, 128, 31, 64],
+  "prefillLength": 16,
+  "positions": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+  "outputsPerCall": 1,
+  "implicitSpecialTokens": false
+}
