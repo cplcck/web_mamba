@@ -211,7 +211,7 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
   - Failure QA: reject missing dtype, dangling producer, wrong capture ID, negative/overflowing dimensions, and unsupported formula operation. Distinguish unknown storage from zero. Evidence: `E/task-2/rejections.txt`.
   - Commit: N.
 
-- [ ] 3. Define the engineering explorer design contract
+- [x] 3. Define the engineering explorer design contract
   - Recommended task executor category: visual-engineering - visual hierarchy and accessibility design.
   - Files: `DESIGN.md`, `.omo/evidence/mamba1-130m-visualizer/task-3/` design reference artifacts.
   - Work: document an engineering-blueprint interface, compact mono metadata, Korean explanatory copy, and stable semantic flow colors. Define exact desktop/mobile layout, scroll ownership, spacing/type/color tokens, focus/hover/selected states, reduced motion, loading/error/search-empty states, SVG/list equivalence, and the three tensor sections at every level. No marketing landing page or gratuitous animation.
