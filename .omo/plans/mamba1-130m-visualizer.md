@@ -251,7 +251,7 @@ dist/                                   ignored deployable HTML/CSS/JS/data only
   - Failure QA: missing snapshot, wrong vocabulary index, and accidental non-F32/optional-kernel execution are detected before comparison. Evidence: `E/task-5/hf-failures.txt`.
   - Commit: N.
 
-- [ ] 6. Audit the source-to-GGUF conversion exactly
+- [x] 6. Audit the source-to-GGUF conversion exactly
   - Recommended task executor category: deep - exhaustive independent tensor correspondence and transformed values.
   - Files: `tools/audit_gguf.py`, `tests/test_audit_gguf.py`.
   - Work: use pinned `gguf-py` reader and safetensors to enumerate every tensor and independently implement the expected mapping. Check all metadata and tensor names, counts, dtypes, shapes, values, vocabulary mapping, and tied weight handling. Do not use the converter's transformation function as the auditor's implementation.
