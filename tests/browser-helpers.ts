@@ -126,7 +126,7 @@ export async function allEntities(page: Page) {
         eq(location.hash, `#scenario=${scenario}&entity=${encodeURIComponent(entity.id)}`, label);
         eq(document.querySelector<HTMLElement>('.explorer')!.dataset.entityId, entity.id, 'explorer');
         eq(document.querySelector<HTMLElement>('.explorer')!.dataset.scenario, scenario, 'scenario');
-        eq(document.querySelector<HTMLElement>('.hierarchy [aria-current=page]')?.dataset.entityId, entity.id, 'selected hierarchy');
+        eq(document.querySelector<HTMLElement>('.breadcrumbs [aria-current=page]')?.dataset.entityId, entity.id, 'selected hierarchy');
         const ancestors: string[] = [];
         for (let ancestor: typeof entity | undefined = entity; ancestor; ancestor = entities.get(ancestor.parentId!)) ancestors.unshift(ancestor.id);
         eq([...document.querySelectorAll<HTMLElement>('.breadcrumbs__link')].map(n => n.dataset.entityId), ancestors, 'breadcrumbs');
@@ -226,6 +226,9 @@ export async function allEntities(page: Page) {
           for (const array of arrays) metadata(group.querySelector(`[data-family=${array.family}]`)!, array);
         }
         eq([...document.querySelectorAll<HTMLElement>('.graph-node')].map(n => n.dataset.entityId), [...document.querySelectorAll<HTMLElement>('.graph-list__node')].map(n => n.dataset.entityId), 'SVG/list equivalence');
+        const edgeIdentity = (selector: string) => [...document.querySelectorAll(selector)].map(node =>
+          ['data-edge-key', 'data-edge-role', 'data-source-id', 'data-target-id'].map(attribute => node.getAttribute(attribute)));
+        eq(edgeIdentity('.graph-edge'), edgeIdentity('.graph-list__edge'), 'SVG/list tensor edge identity');
         coverage.push({ scenario, entityId: entity.id, kind: entity.kind, tensorRows, fieldChecks: tensorRows * 26, stateArrays: 4, layer, emptyWeights: entity.weightTensorIds.length === 0 });
       }
     }

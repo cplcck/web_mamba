@@ -1,0 +1,46 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { buildBlockFlowModel } from '../src/block-flow';
+import { validateDocument } from '../src/schema';
+
+const document = validateDocument(JSON.parse(readFileSync('public/data/prefill.json', 'utf8')));
+
+describe('representative block context', () => {
+  it('uses the actual block and ordered stage records when selecting block.23', () => {
+    // Given / When
+    const context = buildBlockFlowModel(document, 'block.23');
+    // Then: presentation preserves reference identity and never substitutes block.0 data.
+    const block = document.entities.find(entity => entity.id === 'block.23');
+    expect(context.block).toBe(block);
+    expect(context.blocks).toHaveLength(24);
+    expect(context.stages.map(stage => stage.id)).toEqual(block?.children);
+    expect(context.stages).toHaveLength(8);
+    for (const stage of context.stages) expect(stage).toBe(document.entities.find(entity => entity.id === stage.id));
+    expect(context.operators).toEqual([]);
+  });
+
+  it('retains the real block and stage when an operator is selected', () => {
+    // Given
+    const stage = document.entities.find(entity => entity.id === 'block.7/input-projection-split');
+    const operator = stage?.children[0];
+    if (!operator) throw new Error('actual stage operator missing');
+    // When
+    const context = buildBlockFlowModel(document, operator);
+    // Then
+    expect(context.block?.id).toBe('block.7');
+    expect(context.stage).toBe(stage);
+    expect(context.operators.map(entity => entity.id)).toEqual(stage?.children);
+    expect(context.stages).toHaveLength(8);
+  });
+
+  it('keeps model-wide stage selection distinct from the representative block', () => {
+    // Given / When
+    const context = buildBlockFlowModel(document, 'model/embedding');
+    // Then: model data is not relabeled as block.0.
+    expect(context.block?.id).toBe('block.0');
+    expect(context.stage?.id).toBe('model/embedding');
+    expect(context.selectedId).toBe('model/embedding');
+    expect(context.operators.map(entity => entity.parentId)).toEqual(['model/embedding']);
+    expect(context.modelEntities.map(entity => entity.id)).toEqual(['mamba-130m', 'model/embedding', 'model/final-normalization', 'model/final-projection']);
+  });
+});

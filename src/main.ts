@@ -131,7 +131,7 @@ function shell(root: HTMLElement, loading = true): { readonly explorer: HTMLElem
   workspace.setAttribute('aria-label', '모델 탐색과 tensor 검사')
   skip.addEventListener('click', event => { event.preventDefault(); workspace.focus() })
   const explorer = element('section', 'explorer'); explorer.setAttribute('aria-label', '모델 계층과 연산 흐름')
-  const inspector = element('aside', 'inspector'); inspector.setAttribute('aria-label', '선택한 항목의 tensor inspector')
+  const inspector = element('aside', 'inspector'); inspector.id = 'tensor-inspector'; inspector.tabIndex = -1; inspector.setAttribute('aria-label', '선택한 항목의 tensor inspector')
   const inspectorTitle = element('p', 'inspector__loading'); inspectorTitle.textContent = '선택 항목을 기다리는 중입니다.'; inspector.append(inspectorTitle)
   if (loading) loadingSkeleton(explorer, inspector)
   workspace.append(explorer, inspector)

@@ -1,4 +1,5 @@
 import { buildGraphModel, renderGraph } from './graph';
+import { buildBlockFlowModel, renderBlockFlow } from './block-flow';
 import type { CaptureDocument, Entity } from './schema';
 
 export type ExplorerScenario = 'prefill' | 'decode';
@@ -83,36 +84,28 @@ function renderBreadcrumbs(root: HTMLElement, document: CaptureDocument, entityI
   while (current) { path.unshift(current); current = current.parentId === null ? undefined : map.get(current.parentId); }
   const nav = root.querySelector('.breadcrumbs'); if (!(nav instanceof HTMLElement)) return; nav.replaceChildren();
   const list = element(nav.ownerDocument, 'ol', 'breadcrumbs__list');
-  for (const entity of path) { const item = element(nav.ownerDocument, 'li', 'breadcrumbs__item'), link = button(nav.ownerDocument, 'breadcrumbs__link'); link.dataset.focusKey = `breadcrumb:${entity.id}`; link.dataset.entityId = entity.id; link.setAttribute('aria-label', `${entity.kind} ${entity.id}`); link.textContent = entity.id; link.addEventListener('click', () => select(entity.id)); item.append(link); list.append(item); }
+  for (const entity of path) { const item = element(nav.ownerDocument, 'li', 'breadcrumbs__item'), link = button(nav.ownerDocument, 'breadcrumbs__link'); link.dataset.focusKey = `breadcrumb:${entity.id}`; link.dataset.entityId = entity.id; link.setAttribute('aria-label', `${entity.kind} ${entity.id}`); link.setAttribute('aria-current', entity.id === entityId ? 'page' : 'false'); link.textContent = entity.id; link.addEventListener('click', () => select(entity.id)); item.append(link); list.append(item); }
   nav.append(list);
 }
 function renderHierarchy(root: HTMLElement, document: CaptureDocument, selectedId: string, query: string, select: (id: string) => void): void {
   const nav = root.querySelector('.hierarchy'); if (!(nav instanceof HTMLElement)) return;
   const previous = nav.querySelector('.hierarchy__list'); previous?.remove();
   const list = element(nav.ownerDocument, 'ol', 'hierarchy__list'), map = mapEntities(document), results = findSearchResults(document, query);
-  const searching = query.trim().length > 0, narrow = nav.ownerDocument.defaultView?.matchMedia('(max-width: 680px)').matches ?? false;
-  const path: Entity[] = []; let current = map.get(selectedId);
-  while (current) { path.unshift(current); current = current.parentId === null ? undefined : map.get(current.parentId); }
-  const ancestors = new Set(path.slice(0, -1).map(entity => entity.id));
-  nav.dataset.layout = narrow ? 'drilldown' : 'tree';
+  const searching = query.trim().length > 0;
+  nav.dataset.layout = 'search'; list.hidden = !searching;
   const add = (entity: Entity, parent: HTMLElement, matches: readonly SearchMatch[] = []): void => {
     const item = element(nav.ownerDocument, 'li', 'hierarchy__item'), row = button(nav.ownerDocument, 'hierarchy__row');
     row.dataset.entityId = entity.id; row.dataset.focusKey = `hierarchy:${entity.id}`;
     row.setAttribute('aria-label', `${entity.kind} ${entity.id}`); row.setAttribute('aria-current', entity.id === selectedId ? 'page' : 'false');
-    row.classList.toggle('hierarchy__row--selected', entity.id === selectedId); row.classList.toggle('hierarchy__row--ancestor', ancestors.has(entity.id));
+    row.classList.toggle('hierarchy__row--selected', entity.id === selectedId);
     row.textContent = `${entity.kind} · ${entity.id}`; row.addEventListener('click', () => select(entity.id)); item.append(row);
     for (const match of matches) { const text = element(nav.ownerDocument, 'span', 'hierarchy__match'); text.dataset.matchKind = match.matchKind; text.textContent = match.matchText; row.append(text); }
-    if (!searching && !narrow && entity.children.length > 0) { const children = element(nav.ownerDocument, 'ol', 'hierarchy__children'); for (const childId of entity.children) { const child = map.get(childId); if (child) add(child, children); } item.append(children); }
     parent.append(item);
   };
   if (searching) {
     for (const result of results) { const entity = map.get(result.entityId); if (entity) add(entity, list, result.matches); }
     if (results.length === 0) { const item = element(nav.ownerDocument, 'li', 'hierarchy__empty'); item.textContent = '일치하는 operator 또는 tensor가 없습니다.'; list.append(item); }
-  } else if (narrow) {
-    for (const entity of path) add(entity, list);
-    const selected = map.get(selectedId), parent = selected?.parentId ? map.get(selected.parentId) : undefined;
-    for (const id of selected?.kind === 'operator' ? parent?.children ?? [] : selected?.children ?? []) { const child = map.get(id); if (child && id !== selectedId) add(child, list); }
-  } else add(rootOf(document), list);
+  }
   const status = nav.querySelector<HTMLElement>('.hierarchy__search-status');
   if (status) { const count = results.reduce((sum, result) => sum + result.matches.length, 0); status.dataset.resultCount = String(results.length); status.dataset.matchCount = String(count); status.textContent = searching ? `${results.length}개 operator · ${count}개 이름 일치` : ''; }
   nav.append(list);
@@ -127,25 +120,34 @@ const isContentAnchor = (hash: string): boolean => hash.length > 1 && !/(?:^#|&)
 
 export function createExplorer(host: HTMLElement, documents: Documents, onSelection: SelectionListener): ExplorerHandle {
   const document = host.ownerDocument, view = document.defaultView;
-  const requested = decodeSelectionHash(view?.location.hash ?? ''), initial: ExplorerSelection = requested ? resolveScenarioSelection(requested, requested.scenario, documents) : { scenario: 'prefill', entityId: rootOf(documents.prefill).id };
+  const landingId = documents.prefill.entities.find(entity => entity.kind === 'block')?.id ?? rootOf(documents.prefill).id;
+  const requested = decodeSelectionHash(view?.location.hash ?? ''), initial: ExplorerSelection = requested ? resolveScenarioSelection(requested, requested.scenario, documents) : { scenario: 'prefill', entityId: landingId };
   let current = initial, query = '', graphCleanup = (): void => undefined, destroyed = false;
   let reason: SelectionReason = (requested && requested.entityId !== initial.entityId) || (!requested && view?.location.hash && !isContentAnchor(view.location.hash)) ? 'invalid-route' : 'selected';
-  const narrow = view?.matchMedia('(max-width: 680px)');
   host.classList.add('explorer');
   const breadcrumbs = element(document, 'nav', 'breadcrumbs'); breadcrumbs.setAttribute('aria-label', 'Breadcrumb');
-  const hierarchy = element(document, 'nav', 'hierarchy'); hierarchy.setAttribute('aria-label', 'Model hierarchy');
+  const hierarchy = element(document, 'nav', 'hierarchy'); hierarchy.setAttribute('aria-label', 'Operator and tensor search');
   const searchLabel = element(document, 'label', 'hierarchy__search-label'); searchLabel.textContent = 'operator / tensor 검색'; const search = searchInput(document, 'hierarchy__search'); search.id = 'explorer-search'; search.placeholder = '이름으로 찾기'; searchLabel.append(search);
   const clear = button(document, 'hierarchy__clear'); clear.textContent = '검색 지우기'; clear.addEventListener('click', () => { search.value = ''; query = ''; renderHierarchy(host, documents[current.scenario], current.entityId, query, selectEntity); search.focus(); });
   const searchStatus = element(document, 'p', 'hierarchy__search-status'); searchStatus.setAttribute('role', 'status');
   hierarchy.append(searchLabel, clear, searchStatus);
   const graphHost = element(document, 'figure', 'operator-graph'), status = element(document, 'p', 'explorer__status'); status.setAttribute('role', 'status');
-  host.replaceChildren(breadcrumbs, hierarchy, graphHost, status);
+  const blockFlow = element(document, 'div', 'block-flow');
+  const evidence = document.createElement('details'); evidence.className = 'graph-evidence';
+  const evidenceSummary = element(document, 'summary', 'graph-evidence__summary');
+  evidence.append(evidenceSummary, graphHost);
+  const jump = document.createElement('a'); jump.className = 'inspector-jump'; jump.href = '#tensor-inspector'; jump.textContent = '선택 항목의 tensor inspector ↓';
+  jump.addEventListener('click', event => { event.preventDefault(); const inspector = document.getElementById('tensor-inspector'); inspector?.focus({ preventScroll: true }); inspector?.scrollIntoView({ block: 'start' }); });
+  host.replaceChildren(breadcrumbs, hierarchy, blockFlow, evidence, jump, status);
   const render = (): void => {
     if (destroyed) return;
     const active = document.activeElement, focusKey = active && host.contains(active) ? active.getAttribute('data-focus-key') : null;
     host.dataset.scenario = current.scenario; host.dataset.entityId = current.entityId;
     renderBreadcrumbs(host, documents[current.scenario], current.entityId, selectEntity); renderHierarchy(host, documents[current.scenario], current.entityId, query, selectEntity);
-    graphCleanup(); graphCleanup = renderGraph(graphHost, document, buildGraphModel(documents[current.scenario], current.entityId), selectEntity); renderStatus(host, current, reason);
+    renderBlockFlow(blockFlow, buildBlockFlowModel(documents[current.scenario], current.entityId), selectEntity);
+    const graph = buildGraphModel(documents[current.scenario], current.entityId);
+    evidenceSummary.textContent = `전체 tensor / edge 데이터 · ${graph.nodes.length} nodes · ${graph.edges.length} edges`;
+    graphCleanup(); graphCleanup = renderGraph(graphHost, document, graph, selectEntity); renderStatus(host, current, reason);
     const selected = mapEntities(documents[current.scenario]).get(current.entityId)!;
     const boundary = element(document, 'p', 'explorer__boundary');
     boundary.dataset.entityId = selected.id; boundary.dataset.kind = selected.kind; boundary.dataset.scenario = current.scenario;
@@ -184,14 +186,13 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   const navigate = (): void => {
     const hash = view?.location.hash ?? ''; if (hash === handledHash) return;
     handledHash = hash; if (isContentAnchor(hash)) return;
-    const requested = decodeSelectionHash(hash), next = requested ? resolveScenarioSelection(requested, requested.scenario, documents) : { scenario: 'prefill' as const, entityId: rootOf(documents.prefill).id };
+    const requested = decodeSelectionHash(hash), next = requested ? resolveScenarioSelection(requested, requested.scenario, documents) : { scenario: 'prefill' as const, entityId: landingId };
     apply(next, false, requested && requested.entityId === next.entityId ? 'selected' : 'invalid-route');
   };
   const onSearch = (): void => { query = search.value; renderHierarchy(host, documents[current.scenario], current.entityId, query, selectEntity); };
   const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape' && document.activeElement === search) { search.value = ''; query = ''; onSearch(); } };
   search.addEventListener('input', onSearch); search.addEventListener('keydown', onKey); view?.addEventListener('popstate', navigate); view?.addEventListener('hashchange', navigate);
-  narrow?.addEventListener('change', render);
   if (!isContentAnchor(view?.location.hash ?? '')) canonicalize();
   render(); onSelection(current);
-  return { setScenario, selectEntity, destroy: () => { if (destroyed) return; destroyed = true; graphCleanup(); search.removeEventListener('input', onSearch); search.removeEventListener('keydown', onKey); view?.removeEventListener('popstate', navigate); view?.removeEventListener('hashchange', navigate); narrow?.removeEventListener('change', render); host.replaceChildren(); host.classList.remove('explorer'); } };
+  return { setScenario, selectEntity, destroy: () => { if (destroyed) return; destroyed = true; graphCleanup(); search.removeEventListener('input', onSearch); search.removeEventListener('keydown', onKey); view?.removeEventListener('popstate', navigate); view?.removeEventListener('hashchange', navigate); host.replaceChildren(); host.classList.remove('explorer'); } };
 }
