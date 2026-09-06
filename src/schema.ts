@@ -3,13 +3,41 @@ export type Kind = 'model' | 'block' | 'stage' | 'operator';
 export type Role = 'activation' | 'weight' | 'state' | 'index';
 export type DType = 'F32' | 'F16' | 'BF16' | 'I32' | 'I16' | 'I8' | 'Q8_0' | 'Q4_0';
 export type Formula = { op: 'const'; value: number } | { op: 'dim'; name: string } | { op: 'add' | 'mul' | 'sub'; left: Formula; right: Formula };
+export interface OperatorEvidence {
+  readonly op: string; readonly opParamsI32: readonly number[];
+  readonly schedulerObserved: boolean; readonly arithmeticExecution: boolean;
+}
+export interface KernelExplanation { readonly classification: 'kernel-internal'; readonly formula: string; }
+export type KernelInternals = Readonly<Record<'SSM_CONV' | 'SSM_SCAN', KernelExplanation>>;
+export interface StateArraySummary {
+  readonly layer: number; readonly family: 'R' | 'S'; readonly dtype: 'F32';
+  readonly shape: readonly number[]; readonly axisLabels: readonly string[];
+  readonly nativeShape: readonly number[]; readonly nativeStrides: readonly number[];
+  readonly numel: number; readonly logicalBytes: number; readonly sha256: string;
+  readonly sourceRow: number | null; readonly fullInitialBuffer: boolean;
+  readonly summary: { readonly min: number; readonly max: number; readonly mean: number; readonly rms: number; readonly finite: true };
+}
+export interface StateSnapshotSummary {
+  readonly id: string; readonly captureId: string; readonly label: 'before-prefill' | 'after-prefill' | 'before-decode' | 'after-decode';
+  readonly position: number; readonly epoch: number;
+  readonly mapping: { readonly head: number; readonly activeCell: number | null; readonly activeRow: number | null; readonly position: number;
+    readonly cells: readonly { readonly index: number; readonly pos: number; readonly src: number; readonly src0: number; readonly tail: number; readonly sequenceIds: readonly number[] }[] };
+  readonly arrays: readonly StateArraySummary[];
+}
+export interface RecurrentState {
+  readonly nativeCaptureId: string; readonly sequenceId: 0;
+  readonly before: StateSnapshotSummary; readonly after: StateSnapshotSummary;
+  readonly continuity: { readonly fromSnapshotId: string; readonly toSnapshotId: string; readonly mappingEqual: true; readonly arraysByteEqual: true; readonly comparedArrays: 48 };
+}
 export interface GgufPayload { fileId: string; offsetBytes: number; bytes: number; }
 export interface Storage {
   ggmlNbytes: number; requiredAllocBytes: number | null;
   bufferId: string | null; bufferOffsetBytes: number | null; bufferBytes: number | null;
   observationEpoch: number; allocatorSlotBytes: number | null; allocatorSlotReason?: string;
 }
-export interface Tensor {
+export interface Tensor extends Partial<OperatorEvidence> {
+  readonly shapeFormula?: readonly Formula[]; readonly logicalBytesFormula?: Formula;
+  readonly formulaClassification?: 'symbolic-estimate' | 'observed-constant'; readonly formulaSource?: string;
   id: string; name: string; role: Role; dtype: DType;
   nativeShape: readonly number[]; strides: readonly number[];
   logicalShape: readonly number[]; axisLabels: readonly string[];
@@ -27,13 +55,16 @@ export interface CaptureDocument {
   schemaVersion: 1; captureId: string; ggufSha256: string;
   scenario: { name: string; dimensions: Record<string, number> };
   entities: readonly Entity[]; tensors: readonly Tensor[];
+  readonly formulaClassification?: string; readonly kernelInternals?: KernelInternals;
+  readonly offlineConversion?: string; readonly recurrentState?: RecurrentState;
+  readonly numericalStatus?: 'unvalidated' | 'failed' | 'pass'; readonly policySha256?: string | null;
 }
 export interface ExpectedIdentity { captureId: string; ggufSha256: string; }
 
 // Pinned GGML 8144f319: ggml-common.h block_q8_0/block_q4_0 include a two-byte scale.
 const sizes = { F32: 4, F16: 2, BF16: 2, I32: 4, I16: 2, I8: 1, Q8_0: 34, Q4_0: 18 } as const;
 const blocks = { F32: 1, F16: 1, BF16: 1, I32: 1, I16: 1, I8: 1, Q8_0: 32, Q4_0: 32 } as const;
-class SchemaError extends Error {
+export class SchemaError extends Error {
   readonly path: string;
   readonly detail: string;
   constructor(path: string, detail: string) {
@@ -67,6 +98,89 @@ function choice<T extends string>(v: unknown, allowed: readonly T[], p: string):
 function checkedAdd(a: number, b: number, p: string): number { return integer(a + b, p); }
 function reference<T>(map: ReadonlyMap<string, T>, id: string, p: string): T {
   return map.get(id) ?? fail(p, `dangling reference ${id}`);
+}
+
+function exactKeys(x: Record<string, unknown>, keys: readonly string[], p: string): void {
+  if (Object.keys(x).length !== keys.length || keys.some(k => !Object.hasOwn(x, k))) fail(p, 'unexpected or missing fields');
+}
+export function parseFormula(value: unknown, path = 'formula', depth = 0): Formula {
+  if (depth > 64) fail(path, 'formula nesting exceeds 64');
+  const x = obj(value, path);
+  const op = choice(x.op, ['const', 'dim', 'add', 'mul', 'sub'] as const, path + '.op');
+  switch (op) {
+    case 'const': exactKeys(x, ['op', 'value'], path); return { op, value: integer(x.value, path + '.value') };
+    case 'dim': exactKeys(x, ['op', 'name'], path); return { op, name: choice(x.name, ['P', 'T', 'Q', 'O'] as const, path + '.name') };
+    case 'add': case 'mul': case 'sub':
+      exactKeys(x, ['op', 'left', 'right'], path);
+      return { op, left: parseFormula(x.left, path + '.left', depth + 1), right: parseFormula(x.right, path + '.right', depth + 1) };
+    default: { const exhaustive: never = op; return fail(path, String(exhaustive)); }
+  }
+}
+function operatorEvidence(x: Record<string, unknown>, p: string): Partial<OperatorEvidence> {
+  if (['op', 'opParamsI32', 'schedulerObserved', 'arithmeticExecution'].every(k => x[k] === undefined)) return {};
+  const op = str(x.op, p + '.op');
+  if (!/^[A-Z][A-Z0-9_]*$/.test(op)) fail(p + '.op', 'must be an exact GGML opcode');
+  const opParamsI32 = list(x.opParamsI32, p + '.opParamsI32').map(v => {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < -(2 ** 31) || v >= 2 ** 31) return fail(p + '.opParamsI32', 'must be signed I32');
+    return v;
+  });
+  if (opParamsI32.length !== 16) fail(p + '.opParamsI32', 'must contain 16 signed I32 values');
+  if (typeof x.schedulerObserved !== 'boolean' || x.schedulerObserved !== (op !== 'NONE')) fail(p + '.schedulerObserved', 'does not match opcode');
+  const arithmetic = !['NONE', 'VIEW', 'RESHAPE', 'TRANSPOSE', 'PERMUTE'].includes(op) && integer(x.numel, p + '.numel') > 0;
+  if (typeof x.arithmeticExecution !== 'boolean' || x.arithmeticExecution !== arithmetic) fail(p + '.arithmeticExecution', 'does not match execution classification');
+  return { op, opParamsI32, schedulerObserved: x.schedulerObserved, arithmeticExecution: x.arithmeticExecution };
+}
+function kernelInternals(value: unknown): KernelInternals {
+  const x = obj(value, 'kernelInternals');
+  exactKeys(x, ['SSM_CONV', 'SSM_SCAN'], 'kernelInternals');
+  const parse = (key: 'SSM_CONV' | 'SSM_SCAN'): KernelExplanation => {
+    const p = `kernelInternals.${key}`, note = obj(x[key], p);
+    exactKeys(note, ['classification', 'formula'], p);
+    return { classification: choice(note.classification, ['kernel-internal'] as const, p + '.classification'), formula: str(note.formula, p + '.formula') };
+  };
+  return { SSM_CONV: parse('SSM_CONV'), SSM_SCAN: parse('SSM_SCAN') };
+}
+
+function recurrentState(value: unknown, context: { captureId: string; name: 'prefill' | 'decode' }): RecurrentState {
+  const p = 'recurrentState', x = obj(value, p), nativeCaptureId = str(x.nativeCaptureId, p + '.nativeCaptureId');
+  if (x.sequenceId !== 0) fail(p + '.sequenceId', 'must equal 0');
+  const snapshot = (phase: 'before' | 'after'): StateSnapshotSummary => {
+    const path = `${p}.${phase}`, s = obj(x[phase], path), label = `${phase}-${context.name}` as const;
+    const position = phase === 'before' ? (context.name === 'prefill' ? -1 : 15) : (context.name === 'prefill' ? 15 : 16);
+    const initial = position === -1, row = initial ? null : 0;
+    if (s.id !== `${nativeCaptureId}/${label}` || s.captureId !== context.captureId || s.label !== label || s.position !== position) fail(path + '.identity', 'snapshot must match scenario identity, phase and position');
+    const m = obj(s.mapping, path + '.mapping'), cells = list(m.cells, path + '.mapping.cells');
+    if (m.head !== 0 || m.activeCell !== row || m.activeRow !== row || m.position !== position || cells.length !== 1) fail(path + '.mapping', 'does not match single-sequence active mapping');
+    const cell = obj(cells[0], path + '.mapping.cells[0]'), sequenceIds = list(cell.sequenceIds, path + '.mapping.cells[0].sequenceIds').map(v => integer(v, path + '.mapping.sequenceIds'));
+    if (cell.index !== 0 || cell.pos !== position || sequenceIds.length !== (initial ? 0 : 1) || sequenceIds.some(id => id !== 0)) fail(path + '.mapping.cells', 'does not match active sequence');
+    const signedCell = (key: 'src' | 'src0' | 'tail'): number => {
+      const v = cell[key]; if (v !== -1 && v !== 0) return fail(path + '.mapping.' + key, 'outside retained cell capacity'); return v;
+    };
+    const src = signedCell('src'), src0 = signedCell('src0'), tail = signedCell('tail');
+    if (initial && (src !== -1 || src0 !== -1 || tail !== -1)) fail(path + '.mapping.cells', 'initial cells must be empty');
+    const arrays = list(s.arrays, path + '.arrays').map((v, i): StateArraySummary => {
+      const ap = `${path}.arrays[${i}]`, a = obj(v, ap), family = i % 2 === 0 ? 'R' : 'S', width = family === 'R' ? 3 : 16, numel = 1536 * width;
+      exactKeys(a, ['layer', 'family', 'dtype', 'shape', 'axisLabels', 'nativeShape', 'nativeStrides', 'numel', 'logicalBytes', 'sha256', 'sourceRow', 'fullInitialBuffer', 'summary'], ap);
+      const same = (key: string, expected: readonly (string | number)[]): void => {
+        const actual = list(a[key], ap + '.' + key); if (actual.length !== expected.length || actual.some((item, j) => item !== expected[j])) fail(ap + '.' + key, 'does not match canonical state layout');
+      };
+      same('shape', [1, 1536, width]); same('nativeShape', [numel, 1, 1, 1]); same('nativeStrides', [4, numel * 4, numel * 4, numel * 4]);
+      const axisLabels = [initial ? 'cell' : 'sequence', 'inner', family === 'R' ? 'history' : 'state']; same('axisLabels', axisLabels);
+      if (a.layer !== Math.floor(i / 2) || a.family !== family || a.dtype !== 'F32' || a.numel !== numel || a.logicalBytes !== numel * 4 || a.sourceRow !== row || a.fullInitialBuffer !== initial) fail(ap, 'does not match state inventory and mapping');
+      const sha256 = str(a.sha256, ap + '.sha256'); if (!/^[a-f0-9]{64}$/.test(sha256)) fail(ap + '.sha256', 'must be SHA-256');
+      const summary = obj(a.summary, ap + '.summary'); exactKeys(summary, ['min', 'max', 'mean', 'rms', 'finite'], ap + '.summary');
+      const finite = (key: 'min' | 'max' | 'mean' | 'rms'): number => { const n = summary[key]; return typeof n === 'number' && Number.isFinite(n) ? n : fail(ap + '.summary.' + key, 'must be finite'); };
+      const min = finite('min'), max = finite('max'), mean = finite('mean'), rms = finite('rms');
+      if (summary.finite !== true || min > mean || mean > max || rms < 0 || initial && [min, max, mean, rms].some(n => n !== 0)) fail(ap + '.summary', 'invalid bounded state summary');
+      return { layer: Math.floor(i / 2), family, dtype: 'F32', shape: [1, 1536, width], axisLabels, nativeShape: [numel, 1, 1, 1], nativeStrides: [4, numel * 4, numel * 4, numel * 4], numel, logicalBytes: numel * 4, sha256, sourceRow: row, fullInitialBuffer: initial, summary: { min, max, mean, rms, finite: true } };
+    });
+    if (arrays.length !== 48) fail(path + '.arrays', 'must contain both R/S for all 24 layers');
+    return { id: `${nativeCaptureId}/${label}`, captureId: context.captureId, label, position, epoch: integer(s.epoch, path + '.epoch'), mapping: { head: 0, activeCell: row, activeRow: row, position, cells: [{ index: 0, pos: position, src, src0, tail, sequenceIds }] }, arrays };
+  };
+  const before = snapshot('before'), after = snapshot('after'), c = obj(x.continuity, p + '.continuity');
+  if (after.epoch <= before.epoch) fail(p + '.after.epoch', 'must follow before epoch');
+  if (c.fromSnapshotId !== nativeCaptureId + '/after-prefill' || c.toSnapshotId !== nativeCaptureId + '/before-decode' || c.mappingEqual !== true || c.arraysByteEqual !== true || c.comparedArrays !== 48) fail(p + '.continuity', 'requires bound prefill/decode continuity');
+  return { nativeCaptureId, sequenceId: 0, before, after, continuity: { fromSnapshotId: c.fromSnapshotId, toSnapshotId: c.toSnapshotId, mappingEqual: true, arraysByteEqual: true, comparedArrays: 48 } };
 }
 
 function tensor(v: unknown, i: number): Tensor {
@@ -128,6 +242,15 @@ function tensor(v: unknown, i: number): Tensor {
   }
   return {
     id: str(x.id, p + '.id'), name: str(x.name, p + '.name'), role, dtype, classification,
+    ...operatorEvidence(x, p),
+    ...(x.formulaClassification === undefined && x.formulaSource === undefined ? {} : {
+      formulaClassification: choice(x.formulaClassification, ['symbolic-estimate', 'observed-constant'] as const, p + '.formulaClassification'),
+      formulaSource: str(x.formulaSource, p + '.formulaSource'),
+    }),
+    ...(x.shapeFormula === undefined && x.logicalBytesFormula === undefined ? {} : {
+      shapeFormula: list(x.shapeFormula, p + '.shapeFormula').map((f, j) => parseFormula(f, `${p}.shapeFormula[${j}]`)),
+      logicalBytesFormula: parseFormula(x.logicalBytesFormula, p + '.logicalBytesFormula'),
+    }),
     nativeShape: native, strides, logicalShape: logical, axisLabels: labels, numel, typeBlockSize: blockSize, logicalBytes, storage,
     ...(payload ? { ggufPayload: payload } : {}), ...(x.captureId === undefined ? {} : { captureId: str(x.captureId, p + '.captureId') }),
     viewSourceId, viewOffsetBytes, producerIds: ids(x.producerIds, p + '.producerIds'), consumerIds: ids(x.consumerIds, p + '.consumerIds'), provenance: str(x.provenance, p + '.provenance'),
@@ -154,6 +277,8 @@ export function validateDocument(value: unknown, expected?: ExpectedIdentity): C
   for (const t of ts) {
     const p = `tensors.${t.id}`, s = t.storage;
     if (t.captureId !== undefined && t.captureId !== captureId) fail(p + '.captureId', 'does not match document');
+    if (t.shapeFormula !== undefined && (t.shapeFormula.length !== t.logicalShape.length || t.shapeFormula.some((f, i) => evalFormula(f, dimensions) !== t.logicalShape[i]))) fail(p + '.shapeFormula', 'does not reproduce canonical logical shape');
+    if (t.logicalBytesFormula !== undefined && evalFormula(t.logicalBytesFormula, dimensions) !== t.logicalBytes) fail(p + '.logicalBytesFormula', 'does not reproduce canonical logical bytes');
     if (s.bufferId !== null) {
       if (capacities.has(s.bufferId) && capacities.get(s.bufferId) !== s.bufferBytes) fail(p + '.storage.bufferBytes', 'inconsistent for backing buffer');
       capacities.set(s.bufferId, s.bufferBytes);
@@ -234,7 +359,14 @@ export function validateDocument(value: unknown, expected?: ExpectedIdentity): C
       if (e[key].length !== boundary[key].size || e[key].some(id => !boundary[key].has(id))) fail(`entities.${e.id}.${key}`, 'does not equal descendant crossing boundary');
     }
   }
-  return { schemaVersion: 1, captureId, ggufSha256: hash, scenario: { name, dimensions }, entities: es, tensors: ts };
+  return { schemaVersion: 1, captureId, ggufSha256: hash, scenario: { name, dimensions }, entities: es, tensors: ts,
+    ...(x.recurrentState === undefined ? {} : { recurrentState: recurrentState(x.recurrentState, { captureId, name }) }),
+    ...(x.formulaClassification === undefined ? {} : { formulaClassification: str(x.formulaClassification, 'formulaClassification') }),
+    ...(x.kernelInternals === undefined ? {} : { kernelInternals: kernelInternals(x.kernelInternals) }),
+    ...(x.offlineConversion === undefined ? {} : { offlineConversion: str(x.offlineConversion, 'offlineConversion') }),
+    ...(x.numericalStatus === undefined ? {} : { numericalStatus: choice(x.numericalStatus, ['unvalidated', 'failed', 'pass'] as const, 'numericalStatus') }),
+    ...(x.policySha256 === undefined ? {} : { policySha256: x.policySha256 === null ? null : str(x.policySha256, 'policySha256') }),
+  };
 }
 
 export function evalFormula(formula: Formula, dimensions: Record<string, number>): number {
