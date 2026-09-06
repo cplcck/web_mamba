@@ -7,12 +7,13 @@ import sys
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import numpy as np
 from safetensors.numpy import save_file
 from tokenizers import AddedToken, Tokenizer, decoders, models, normalizers, pre_tokenizers, processors
 from transformers import MambaConfig
-sys.path.insert(0, "/home/cplcck/llama.cpp-ssm/gguf-py")
-from gguf import GGUFWriter
+with patch.object(sys, "path", ["/home/cplcck/llama.cpp-ssm/gguf-py", *sys.path]):
+    from gguf import GGUFWriter
 
 
 class AuditTests(unittest.TestCase):
