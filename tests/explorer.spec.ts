@@ -1,5 +1,5 @@
 import { test as base, expect, type Page } from '@playwright/test';
-import { allEntities, arm, changed, installReadiness, mounted, route } from './browser-helpers';
+import { allEntities, arm, changed, closeInspector, installReadiness, mounted, openAdvanced, route } from './browser-helpers';
 
 const test = base.extend<{ audited: void }>({
   audited: [async ({ page, baseURL }, use, info) => {
@@ -75,8 +75,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024
     await mounted(page);
     expect(await selection(page).getAttribute('data-entity-id')).toBe('block.23');
 
-    // Keyboard-only path through skip link and both scenario actions.
-    await page.keyboard.press('Tab');
+    // Dismiss an auto-opened deep-link summary, then use the native keyboard path.
+    await closeInspector(page);
+    await page.locator('.scenario-switch__button[data-scenario=prefill]').focus();
+    await page.keyboard.press('Shift+Tab');
     expect(await page.locator('.skip-link').evaluate(node => node === document.activeElement)).toBe(true);
     const focus = await page.locator('.skip-link').evaluate(node => ({ outline: getComputedStyle(node).outlineStyle, width: getComputedStyle(node).outlineWidth, visible: node.matches(':focus-visible') }));
     expect(focus.visible).toBe(true); expect(focus.outline).not.toBe('none'); expect(parseFloat(focus.width)).toBeGreaterThanOrEqual(2);
@@ -88,9 +90,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024
     await page.keyboard.press('Enter'); await changed(page);
     expect(await page.locator('.scenario-switch__button[data-scenario=decode]').getAttribute('aria-pressed')).toBe('true');
     await arm(page, '.inspector[data-scenario=prefill][data-entity-id="block.23"]');
-    await page.evaluate(() => history.back()); await changed(page);
+    await page.evaluate(() => history.back()); await changed(page); await closeInspector(page);
     await arm(page, '.inspector[data-scenario=decode][data-entity-id="block.23"]');
-    await page.evaluate(() => history.forward()); await changed(page);
+    await page.evaluate(() => history.forward()); await changed(page); await closeInspector(page);
 
     const search = page.locator('.hierarchy__search');
     await arm(page, '.hierarchy__empty'); await search.fill('__no_actual_tensor_matches__'); await changed(page);
@@ -103,13 +105,15 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024
     const found = page.locator('.hierarchy__row').first();
     const operatorId = (await found.getAttribute('data-entity-id'))!;
     await found.focus();
-    await arm(page, `.inspector[data-entity-id="${operatorId}"]`); await page.keyboard.press('Enter'); await changed(page);
+    await arm(page, `.inspector[data-entity-id="${operatorId}"]`); await page.keyboard.press('Enter'); await changed(page); await closeInspector(page);
     expect(await page.evaluate(() => document.activeElement?.getAttribute('data-entity-id'))).toBe(operatorId);
     await page.keyboard.press('Tab');
     expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY');
     await arm(page, '.hierarchy__search-status', 'data-result-count', '0'); await search.fill(''); await changed(page);
     await route(page, 'prefill', 'block.23');
 
+    // Full-field regression intentionally opens the advanced disclosure.
+    await openAdvanced(page);
     // Calculator rejection and recovery use real selected tensors.
     await page.locator('[name=P]').fill('2');
     await arm(page, '.dimension-result', 'data-status', 'unsupported');
@@ -122,6 +126,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024
     await page.locator('[name=state-layer]').selectOption('7'); await changed(page);
     expect(await page.locator('[data-phase=before] [data-family=R] tr[data-field=layer] td').textContent()).toBe('7');
     await route(page, 'prefill', 'block.0');
+    await openAdvanced(page);
     expect(await page.locator('[name=state-layer]').inputValue()).toBe('0');
 
     const accessibility = await page.evaluate(() => {

@@ -55,10 +55,37 @@ export async function route(page: Page, scenario: string, entity: string): Promi
   await changed(page);
 }
 
+export async function openInspector(page: Page): Promise<void> {
+  if (await page.locator('.inspector-toggle').isVisible() && await page.locator('.inspector-dialog').getAttribute('open') === null) {
+    await arm(page, '.inspector-dialog', 'open', '');
+    await page.locator('.inspector-toggle').click(); await changed(page);
+  }
+}
+
+export async function closeInspector(page: Page, escape = false): Promise<void> {
+  if (await page.locator('.inspector-dialog').getAttribute('open') === null) return;
+  await page.evaluate(() => {
+    window.browserChange = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('drawer close event timed out')), 15_000);
+      document.querySelector('dialog')?.addEventListener('close', () => { clearTimeout(timer); resolve(); }, { once: true });
+    });
+  });
+  if (escape) await page.keyboard.press('Escape'); else await page.locator('.inspector-close').click();
+  await changed(page);
+}
+
+export async function openAdvanced(page: Page): Promise<void> {
+  await openInspector(page);
+  if (await page.locator('.inspector-advanced').getAttribute('open') !== null) return;
+  await arm(page, '.inspector-advanced__content > .tensor-section');
+  await page.locator('.inspector-advanced > summary').click(); await changed(page);
+}
+
 // Independent DOM oracle adapted from the approved Integration browser method.
 // Thirty actual selections per browser call let Chromium drain navigation work;
 // there is no RPC per field, polling delay, or repeated document parsing.
 export async function allEntities(page: Page) {
+  await openInspector(page);
   const batches = [];
   let total = Infinity;
   for (let start = 0; start < total; start += 30) {
@@ -130,7 +157,47 @@ export async function allEntities(page: Page) {
         const ancestors: string[] = [];
         for (let ancestor: typeof entity | undefined = entity; ancestor; ancestor = entities.get(ancestor.parentId!)) ancestors.unshift(ancestor.id);
         eq([...document.querySelectorAll<HTMLElement>('.breadcrumbs__link')].map(n => n.dataset.entityId), ancestors, 'breadcrumbs');
-        const sections = [...inspector.querySelectorAll(':scope > .tensor-section')];
+        const advanced = inspector.querySelector<HTMLDetailsElement>('.inspector-advanced')!;
+        must(!advanced.open, 'advanced starts closed on every selection');
+        eq(inspector.querySelectorAll('.tensor-row').length, 0, 'no full-field dump in default view');
+        for (const kind of ['inputs', 'outputs', 'weights'] as const) {
+          const key = kind === 'inputs' ? 'inputTensorIds' : kind === 'outputs' ? 'outputTensorIds' : 'weightTensorIds';
+          const referenced = entity[key].map(id => tensors.get(id)!);
+          const activations = referenced.filter(t => t.role === 'activation');
+          const tokens = referenced.filter(t => t.name === 'inp_tokens');
+          const candidates = activations.length ? activations : tokens.length ? tokens : referenced.filter(t => t.role !== 'state');
+          const expected = (entity.kind === 'model' && kind === 'weights' ? candidates.filter(t => !t.name.startsWith('blk.')) : candidates).slice(0, 2);
+          const section = inspector.querySelector<HTMLElement>(`.summary-section[data-section=${kind}]`)!;
+          eq(Number(section.dataset.count), referenced.length, 'summary actual total');
+          const rows = [...section.querySelectorAll<HTMLElement>('.summary-tensor')];
+          eq(rows.map(row => row.dataset.tensorId), expected.map(t => t.id), 'meaningful summary preview');
+          for (const [i, row] of rows.entries()) {
+            const t = expected[i]!;
+            eq(row.querySelector('h4')?.textContent, t.name, 'summary original name');
+            eq(row.dataset.role, t.role, 'summary role');
+            eq(row.querySelector('[data-field="native ne[4]"]')?.textContent, `native ne[4] ${tuple(t.nativeShape)}`, 'summary native shape');
+            eq(row.querySelector('[data-field=dtype]')?.textContent, t.dtype, 'summary dtype');
+            let value = t.logicalBytes, unit = 0;
+            while (value >= 1024 && unit < 4) { value /= 1024; unit++; }
+            eq(row.querySelector('[data-field=logicalIEC]')?.textContent, unit ? `${Number(value.toFixed(2))} ${['B', 'KiB', 'MiB', 'GiB', 'TiB'][unit]}` : bytes(t.logicalBytes), 'summary compact bytes');
+          }
+        }
+        const stateIds = [...new Set([...entity.inputTensorIds, ...entity.outputTensorIds].filter(id => tensors.get(id)!.role === 'state'))];
+        eq(Number(inspector.querySelector<HTMLElement>('[data-section=state]')?.dataset.count ?? 0), stateIds.length, 'summary distinct state count');
+        must(inspector.querySelectorAll('.summary-tensor').length <= 8, 'bounded preview rows');
+        must(document.documentElement.scrollHeight <= innerHeight, 'bounded document');
+        // Intentionally use the native disclosure, then inspect displayed full detail.
+        await new Promise<void>((resolve, reject) => {
+          const observer = new MutationObserver(() => {
+            if (advanced.querySelector('.tensor-section')) { observer.disconnect(); clearTimeout(timer); resolve(); }
+          });
+          const timer = setTimeout(() => { observer.disconnect(); reject(new Error('advanced render timed out')); }, 15_000);
+          observer.observe(advanced, { childList: true, subtree: true });
+          advanced.querySelector('summary')!.click();
+        });
+        advanced.scrollIntoView({ block: 'nearest' });
+        must(advanced.open && advanced.querySelector('.tensor-section')!.getClientRects().length > 0, 'full evidence is displayed');
+        const sections = [...inspector.querySelectorAll('.inspector-advanced__content > .tensor-section')];
         eq(sections.length, 3, 'three sections');
         let tensorRows = 0;
         for (const [index, kind, key] of [[0, 'inputs', 'inputTensorIds'], [1, 'outputs', 'outputTensorIds'], [2, 'weights', 'weightTensorIds']] as const) {

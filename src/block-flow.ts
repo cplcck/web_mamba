@@ -68,8 +68,8 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
     const choice = element('button', 'block-choice', block.id); choice.type = 'button'; choice.dataset.entityId = block.id;
     choice.setAttribute('aria-pressed', String(block.id === model.block?.id));
     choice.addEventListener('click', () => {
-      setExpanded(false); select(block.id);
-      host.querySelector<HTMLButtonElement>('.representative-block__toggle')?.focus({ preventScroll: true });
+      setExpanded(false); toggle.focus({ preventScroll: true });
+      select(block.id);
     });
     choices.append(choice);
   }

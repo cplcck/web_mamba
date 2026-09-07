@@ -208,6 +208,80 @@ export function buildInspectorModel(document: CaptureDocument, entityId: string)
   return { document, entity, sections, accounting: storageAccounting(referencedTensors) }
 }
 
+export function buildInspectorSummary(model: InspectorModel) {
+  const sections = model.sections.map(section => {
+    const activations = section.tensors.filter(tensor => tensor.role === 'activation')
+    const tokens = section.tensors.filter(tensor => tensor.name === 'inp_tokens')
+    const candidates = activations.length ? activations : tokens.length ? tokens : section.tensors.filter(tensor => tensor.role !== 'state')
+    // A root preview represents global weights, not an arbitrary block's parameters.
+    const preview = model.entity.kind === 'model' && section.kind === 'weights'
+      ? candidates.filter(tensor => !tensor.name.startsWith('blk.')).slice(0, 2) : candidates.slice(0, 2)
+    return { kind: section.kind, label: section.label, count: section.count, preview,
+      stateCount: section.tensors.filter(tensor => tensor.role === 'state').length,
+      indexCount: section.tensors.filter(tensor => tensor.role === 'index').length,
+      uniqueGgufPayloadBytes: section.uniqueGgufPayloadBytes }
+  })
+  const states = [...new Map(model.sections.flatMap(section => section.tensors)
+    .filter(tensor => tensor.role === 'state').map(tensor => [tensor.id, tensor])).values()]
+  return { sections, state: { count: states.length, preview: model.entity.kind === 'model' ? [] : states.slice(0, 2) } }
+}
+
+const STAGE_ROLES: Readonly<Record<string, string>> = {
+  embedding: '토큰 ID를 모델의 특징 벡터로 바꿉니다.',
+  'final-normalization': '마지막 블록의 출력을 정규화합니다.',
+  'final-projection': '특징 벡터를 어휘별 logits로 투영합니다.',
+  normalization: '블록 입력의 크기를 정규화합니다.',
+  'input-projection-split': '입력을 확장하고 상태 경로와 게이트 경로로 나눕니다.',
+  'convolution-history': '이전 convolution 이력과 현재 입력을 결합합니다.',
+  'dt-b-c-projection': '입력에서 시간 간격과 상태 갱신 매개변수를 계산합니다.',
+  'selective-scan-state': '입력에 따라 순환 상태를 갱신하고 출력을 만듭니다.',
+  'skip-gating': '직접 전달 경로와 상태 출력을 합쳐 게이트를 적용합니다.',
+  'output-projection': '확장된 특징을 모델 차원으로 되돌립니다.',
+  residual: '블록 입력을 더해 다음 블록으로 전달합니다.',
+}
+
+const OPERATOR_ROLES: Readonly<Record<string, string>> = {
+  ADD: '입력 텐서들을 원소별로 더합니다.',
+  MUL: '입력 텐서들을 원소별로 곱합니다.',
+  MUL_MAT: '행렬 곱으로 입력 특징을 투영합니다.',
+  RMS_NORM: '입력의 RMS 크기를 기준으로 정규화합니다.',
+  GET_ROWS: '입력 인덱스에 해당하는 행을 가져옵니다.',
+  RESHAPE: '값을 바꾸지 않고 텐서의 차원 구성을 바꿉니다.',
+  VIEW: '기존 텐서의 일부를 새 모양으로 참조합니다.',
+  TRANSPOSE: '텐서의 축 순서를 바꿉니다.',
+  CONT: '텐서를 연속된 배치로 정리합니다.',
+  CPY: '입력 값을 대상 텐서로 복사합니다.',
+  CONCAT: '입력 텐서들을 지정된 축으로 이어 붙입니다.',
+  SCALE: '각 원소에 스칼라 배율을 적용합니다.',
+  UNARY: '각 원소에 단항 함수를 적용합니다.',
+  GLU: '게이트로 특징의 전달량을 조절합니다.',
+  SSM_CONV: '이전 이력과 현재 입력에 convolution을 적용합니다.',
+  SSM_SCAN: '입력에 따라 순환 상태와 출력을 계산합니다.',
+}
+
+function roleExplanation(model: InspectorModel): string {
+  switch (model.entity.kind) {
+    case 'model': return '토큰을 임베딩하고 24개 Mamba 블록을 거쳐 어휘별 logits를 만듭니다.'
+    case 'block': return '입력을 정규화한 뒤 convolution과 순환 상태를 갱신하고 잔차 출력을 만듭니다.'
+    case 'stage': return STAGE_ROLES[model.entity.id.split('/').at(-1) ?? ''] ?? '선택한 단계의 입력을 처리해 다음 단계로 전달합니다.'
+    case 'operator': {
+      const op = model.document.tensors.find(tensor => model.entity.outputTensorIds.includes(tensor.id))?.op
+      return `${op ?? 'GGML'} · ${OPERATOR_ROLES[op ?? ''] ?? '선택한 입력에서 출력 텐서를 만듭니다.'}`
+    }
+  }
+}
+
+function renderSummaryTensor(host: HTMLElement, tensor: InspectorTensor): void {
+  const row = element('article', 'summary-tensor'); row.dataset.tensorId = tensor.id; row.dataset.role = tensor.role
+  const name = element('h4', 'summary-tensor__name'); name.textContent = tensor.name
+  const shape = element('p', 'summary-tensor__shape'); shape.dataset.field = 'native ne[4]'; shape.textContent = `native ne[4] ${tensor.nativeShape}`
+  const meta = element('p', 'summary-tensor__meta')
+  const dtype = element('span'); dtype.dataset.field = 'dtype'; dtype.textContent = tensor.dtype
+  const bytes = element('span'); bytes.dataset.field = 'logicalIEC'; bytes.textContent = tensor.logicalIEC
+  meta.append(dtype, ' · ', bytes, ` · ${tensor.role}`)
+  row.append(name, shape, meta); host.append(row)
+}
+
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
   if (className !== undefined) node.className = className
@@ -363,13 +437,54 @@ function renderState(host: HTMLElement, model: InspectorModel): void {
 
 export function renderInspector(host: HTMLElement, model: InspectorModel, bundle?: PublicBundle): void {
   host.replaceChildren(); host.dataset.entityId = model.entity.id; host.dataset.scenario = model.document.scenario.name
+  host.scrollTop = 0
   const heading = element('h2', 'inspector__title')
-  heading.textContent = `${model.entity.kind} / ${model.entity.id}`
+  heading.id = 'inspector-selection'; heading.textContent = model.entity.id
   const header = element('header', 'inspector__header')
-  header.append(heading)
+  const identity = element('p', 'inspector__identity'); identity.textContent = `${model.entity.kind} / ${model.document.scenario.name}`
+  header.append(identity, heading)
   const summary = element('p', 'inspector__summary')
-  summary.textContent = `parent: ${model.entity.parentId ?? 'root'} · selection is validated metadata`
+  summary.textContent = roleExplanation(model)
   header.append(summary); host.append(header)
+  const compact = buildInspectorSummary(model)
+  for (const section of compact.sections) {
+    const group = element('section', `summary-section summary-section--${section.kind}`)
+    group.dataset.section = section.kind; group.dataset.count = String(section.count)
+    const title = element('h3'); title.id = `summary-${section.kind}`; title.textContent = `${section.label} · ${section.count} total`
+    group.setAttribute('aria-labelledby', title.id); group.append(title)
+    const note = element('p', 'summary-section__note')
+    note.textContent = section.kind === 'weights'
+      ? section.count ? `unique GGUF payload · ${formatIECBytes(section.uniqueGgufPayloadBytes).iec}` : EMPTY_WEIGHT_MESSAGE
+      : `${section.count - section.stateCount - section.indexCount} activation · ${section.indexCount} index · ${section.stateCount} state`
+    group.append(note)
+    for (const tensor of section.preview) renderSummaryTensor(group, tensor)
+    if (section.count > section.preview.length) {
+      const hint = element('p', 'summary-section__hint'); hint.textContent = `${section.preview.length}개 미리보기 · 전체 목록은 고급 정보`
+      group.append(hint)
+    }
+    host.append(group)
+  }
+  if (compact.state.count) {
+    const group = element('section', 'summary-section summary-section--state'); group.dataset.section = 'state'; group.dataset.count = String(compact.state.count)
+    const title = element('h3'); title.id = 'summary-state'; title.textContent = `State · ${compact.state.count} total`
+    group.setAttribute('aria-labelledby', title.id)
+    const note = element('p', 'summary-section__note'); note.textContent = '입출력 경계의 순환 상태 · activation과 별도'
+    group.append(title, note)
+    for (const tensor of compact.state.preview) renderSummaryTensor(group, tensor)
+    host.append(group)
+  }
+  const advanced = element('details', 'inspector-advanced')
+  const toggle = element('summary'); toggle.textContent = '고급 정보'
+  const content = element('div', 'inspector-advanced__content'); content.tabIndex = 0
+  content.setAttribute('role', 'region'); content.setAttribute('aria-label', '전체 tensor 필드와 캡처 근거')
+  advanced.append(toggle, content)
+  advanced.addEventListener('toggle', () => {
+    if (advanced.open && !content.hasChildNodes()) renderFullInspector(content, model, bundle)
+  })
+  host.append(advanced)
+}
+
+function renderFullInspector(host: HTMLElement, model: InspectorModel, bundle?: PublicBundle): void {
   for (const sectionModel of model.sections) {
     const section = element('section', `tensor-section tensor-section--${sectionModel.kind}`)
     section.setAttribute('aria-labelledby', `${sectionModel.kind}-heading`)

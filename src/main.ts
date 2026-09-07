@@ -106,7 +106,7 @@ function loadingSkeleton(explorer: HTMLElement, inspector: HTMLElement): void {
   inspector.append(tensors)
 }
 
-function shell(root: HTMLElement, loading = true): { readonly explorer: HTMLElement; readonly inspector: HTMLElement; readonly status: HTMLElement; readonly buttons: Readonly<Record<Scenario, HTMLButtonElement>> } {
+function shell(root: HTMLElement, loading = true) {
   root.replaceChildren()
   const skip = element('a', 'skip-link'); skip.href = '#workspace'; skip.textContent = '본문으로 건너뛰기'
   const app = element('div', 'app-shell')
@@ -126,7 +126,10 @@ function shell(root: HTMLElement, loading = true): { readonly explorer: HTMLElem
     controls.append(button); buttons[scenario] = button
   }
   const status = element('p', 'topbar__status'); status.role = 'status'; status.textContent = '검증된 캡처 데이터를 불러오는 중입니다.'
-  topbar.append(identity, controls, status)
+  const toggle = element('button', 'action-button inspector-toggle'); toggle.type = 'button'; toggle.textContent = '선택 정보'; toggle.disabled = true
+  toggle.setAttribute('aria-haspopup', 'dialog'); toggle.setAttribute('aria-controls', 'inspector-dialog'); toggle.setAttribute('aria-expanded', 'false')
+  const actions = element('div', 'topbar__actions'); actions.append(controls, toggle)
+  topbar.append(identity, actions, status)
   const workspace = element('main', 'workspace'); workspace.id = 'workspace'; workspace.tabIndex = -1
   workspace.setAttribute('aria-label', '모델 탐색과 tensor 검사')
   skip.addEventListener('click', event => { event.preventDefault(); workspace.focus() })
@@ -134,9 +137,46 @@ function shell(root: HTMLElement, loading = true): { readonly explorer: HTMLElem
   const inspector = element('aside', 'inspector'); inspector.id = 'tensor-inspector'; inspector.tabIndex = -1; inspector.setAttribute('aria-label', '선택한 항목의 tensor inspector')
   const inspectorTitle = element('p', 'inspector__loading'); inspectorTitle.textContent = '선택 항목을 기다리는 중입니다.'; inspector.append(inspectorTitle)
   if (loading) loadingSkeleton(explorer, inspector)
-  workspace.append(explorer, inspector)
-  app.append(topbar, workspace); root.append(skip, app)
-  return { explorer, inspector, status, buttons }
+  const pane = element('div', 'inspector-pane')
+  const toolbar = element('div', 'inspector-toolbar')
+  const label = element('p'); label.id = 'inspector-label'; label.textContent = '선택 정보'
+  const close = element('button', 'action-button inspector-close'); close.type = 'button'; close.textContent = '닫기'; close.autofocus = true
+  toolbar.append(label, close); pane.append(toolbar, inspector)
+  const dialog = element('dialog', 'inspector-dialog'); dialog.id = 'inspector-dialog'; dialog.setAttribute('aria-labelledby', label.id)
+  workspace.append(explorer, pane)
+  app.append(topbar, workspace, dialog); root.append(skip, app)
+  return { explorer, inspector, status, buttons, pane, dialog, close, toggle, workspace }
+}
+
+function connectInspectorPane(refs: ReturnType<typeof shell>): (activate: boolean) => void {
+  const compact = matchMedia('(max-width: 1024px)')
+  let returnFocus: HTMLElement | SVGElement | null = null
+  const open = (activate: boolean): void => {
+    const active = document.activeElement
+    if (activate && (active instanceof HTMLElement || active instanceof SVGElement) && refs.explorer.contains(active)) returnFocus = active
+    if (compact.matches) {
+      if (!refs.dialog.open) { refs.dialog.showModal(); refs.toggle.setAttribute('aria-expanded', 'true') }
+      if (activate) refs.inspector.scrollTop = 0
+      refs.close.focus({ preventScroll: true })
+    }
+  }
+  refs.close.addEventListener('click', () => refs.dialog.close())
+  refs.dialog.addEventListener('close', () => {
+    refs.toggle.setAttribute('aria-expanded', 'false')
+    if (compact.matches) {
+      const target = returnFocus?.isConnected ? returnFocus : refs.explorer.querySelector<HTMLElement>('.breadcrumbs [aria-current="page"]')
+      target?.focus({ preventScroll: true })
+    }
+  })
+  refs.toggle.addEventListener('click', () => open(false))
+  const reflow = (): void => {
+    const focused = refs.pane.contains(document.activeElement)
+    if (compact.matches) { refs.dialog.append(refs.pane); if (focused) open(false) }
+    else { if (refs.dialog.open) refs.dialog.close(); refs.workspace.append(refs.pane) }
+  }
+  compact.addEventListener('change', reflow); reflow()
+  refs.toggle.disabled = false
+  return open
 }
 
 function renderFailure(root: HTMLElement, error: DataLoadError, retry: () => void): void {
@@ -154,11 +194,13 @@ async function start(root: HTMLElement): Promise<void> {
   const data = await loadPublicData()
   refs.status.textContent = `${data.manifest.modelId} · capture identities validated`
   const { createExplorer } = await import('./explorer')
-  const select = (selection: ExplorerSelection): void => {
+  const openInspector = connectInspectorPane(refs)
+  const select = (selection: ExplorerSelection, activate: boolean): void => {
     refs.buttons.prefill.setAttribute('aria-pressed', String(selection.scenario === 'prefill'))
     refs.buttons.decode.setAttribute('aria-pressed', String(selection.scenario === 'decode'))
     refs.status.textContent = `선택됨 · ${selection.entityId} · ${selection.scenario}`
     renderInspector(refs.inspector, buildInspectorModel(data.documents[selection.scenario], selection.entityId), data)
+    if (activate) openInspector(true)
   }
   const handle = createExplorer(refs.explorer, data.documents, select)
   for (const scenario of ['prefill', 'decode'] as const) {

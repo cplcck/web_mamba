@@ -8,7 +8,7 @@ type SearchMatch = Readonly<{ matchText: string; matchKind: 'operator' | 'tensor
 export type SearchResult = SearchMatch & Readonly<{ entityId: string; matches: readonly SearchMatch[] }>;
 export interface ExplorerHandle { setScenario(scenario: ExplorerScenario): void; selectEntity(entityId: string): void; destroy(): void; }
 type Documents = Record<ExplorerScenario, CaptureDocument>;
-type SelectionListener = (selection: ExplorerSelection) => void;
+type SelectionListener = (selection: ExplorerSelection, activate: boolean) => void;
 const isScenario = (value: string): value is ExplorerScenario => value === 'prefill' || value === 'decode';
 const mapEntities = (document: CaptureDocument): ReadonlyMap<string, Entity> => new Map(document.entities.map(entity => [entity.id, entity]));
 function rootOf(document: CaptureDocument): Entity {
@@ -96,7 +96,7 @@ function renderHierarchy(root: HTMLElement, document: CaptureDocument, selectedI
   const add = (entity: Entity, parent: HTMLElement, matches: readonly SearchMatch[] = []): void => {
     const item = element(nav.ownerDocument, 'li', 'hierarchy__item'), row = button(nav.ownerDocument, 'hierarchy__row');
     row.dataset.entityId = entity.id; row.dataset.focusKey = `hierarchy:${entity.id}`;
-    row.setAttribute('aria-label', `${entity.kind} ${entity.id}`); row.setAttribute('aria-current', entity.id === selectedId ? 'page' : 'false');
+    row.setAttribute('aria-description', `${entity.kind} ${entity.id}`); row.setAttribute('aria-current', entity.id === selectedId ? 'page' : 'false');
     row.classList.toggle('hierarchy__row--selected', entity.id === selectedId);
     row.textContent = `${entity.kind} · ${entity.id}`; row.addEventListener('click', () => select(entity.id)); item.append(row);
     for (const match of matches) { const text = element(nav.ownerDocument, 'span', 'hierarchy__match'); text.dataset.matchKind = match.matchKind; text.textContent = match.matchText; row.append(text); }
@@ -136,9 +136,7 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   const evidence = document.createElement('details'); evidence.className = 'graph-evidence';
   const evidenceSummary = element(document, 'summary', 'graph-evidence__summary');
   evidence.append(evidenceSummary, graphHost);
-  const jump = document.createElement('a'); jump.className = 'inspector-jump'; jump.href = '#tensor-inspector'; jump.textContent = '선택 항목의 tensor inspector ↓';
-  jump.addEventListener('click', event => { event.preventDefault(); const inspector = document.getElementById('tensor-inspector'); inspector?.focus({ preventScroll: true }); inspector?.scrollIntoView({ block: 'start' }); });
-  host.replaceChildren(breadcrumbs, blockFlow, hierarchy, evidence, jump, status);
+  host.replaceChildren(breadcrumbs, blockFlow, hierarchy, evidence, status);
   const render = (): void => {
     if (destroyed) return;
     const active = document.activeElement, focusKey = active && host.contains(active) ? active.getAttribute('data-focus-key') : null;
@@ -172,27 +170,27 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   };
   let handledHash = view?.location.hash ?? '';
   const canonicalize = (): void => { if (view && view.location.hash !== encodeSelectionHash(current)) view.history.replaceState({ ...current }, '', encodeSelectionHash(current)); handledHash = view?.location.hash ?? ''; };
-  const apply = (next: ExplorerSelection, push: boolean, nextReason: SelectionReason): void => {
+  const apply = (next: ExplorerSelection, push: boolean, nextReason: SelectionReason, activate = false): void => {
     if (destroyed) return;
     reason = nextReason;
-    if (next.scenario === current.scenario && next.entityId === current.entityId) { canonicalize(); renderStatus(host, current, reason); return; }
+    if (next.scenario === current.scenario && next.entityId === current.entityId) { canonicalize(); renderStatus(host, current, reason); if (activate) onSelection(current, true); return; }
     current = next;
     if (push && view) view.history.pushState({ ...next }, '', encodeSelectionHash(next)); else canonicalize();
     handledHash = view?.location.hash ?? '';
-    render(); onSelection(current);
+    render(); onSelection(current, activate);
   };
-  function selectEntity(entityId: string): void { const next = resolveScenarioSelection({ scenario: current.scenario, entityId }, current.scenario, documents); apply(next, true, next.entityId === entityId ? 'selected' : 'invalid-route'); }
+  function selectEntity(entityId: string): void { const next = resolveScenarioSelection({ scenario: current.scenario, entityId }, current.scenario, documents); apply(next, true, next.entityId === entityId ? 'selected' : 'invalid-route', true); }
   const setScenario = (scenario: ExplorerScenario): void => { const next = resolveScenarioSelection(current, scenario, documents); apply(next, true, next.entityId === current.entityId ? 'selected' : 'ancestor-fallback'); };
   const navigate = (): void => {
     const hash = view?.location.hash ?? ''; if (hash === handledHash) return;
     handledHash = hash; if (isContentAnchor(hash)) return;
     const requested = decodeSelectionHash(hash), next = requested ? resolveScenarioSelection(requested, requested.scenario, documents) : { scenario: 'prefill' as const, entityId: landingId };
-    apply(next, false, requested && requested.entityId === next.entityId ? 'selected' : 'invalid-route');
+    apply(next, false, requested && requested.entityId === next.entityId ? 'selected' : 'invalid-route', true);
   };
   const onSearch = (): void => { query = search.value; renderHierarchy(host, documents[current.scenario], current.entityId, query, selectEntity); };
   const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape' && document.activeElement === search) { search.value = ''; query = ''; onSearch(); } };
   search.addEventListener('input', onSearch); search.addEventListener('keydown', onKey); view?.addEventListener('popstate', navigate); view?.addEventListener('hashchange', navigate);
   if (!isContentAnchor(view?.location.hash ?? '')) canonicalize();
-  render(); onSelection(current);
+  render(); onSelection(current, current.entityId !== landingId);
   return { setScenario, selectEntity, destroy: () => { if (destroyed) return; destroyed = true; graphCleanup(); search.removeEventListener('input', onSearch); search.removeEventListener('keydown', onKey); view?.removeEventListener('popstate', navigate); view?.removeEventListener('hashchange', navigate); host.replaceChildren(); host.classList.remove('explorer'); } };
 }
