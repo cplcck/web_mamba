@@ -2,6 +2,7 @@ import { buildInspectorModel, renderInspector } from './inspector'
 import { SchemaError, validateDocument, type CaptureDocument, type ExpectedIdentity } from './schema'
 import { validatePublicBundle, type PublicBundle } from './public-data'
 import type { ExplorerSelection } from './explorer'
+import { entityLabel } from './entity-label'
 
 type Scenario = 'prefill' | 'decode'
 
@@ -198,8 +199,10 @@ async function start(root: HTMLElement): Promise<void> {
   const select = (selection: ExplorerSelection, activate: boolean): void => {
     refs.buttons.prefill.setAttribute('aria-pressed', String(selection.scenario === 'prefill'))
     refs.buttons.decode.setAttribute('aria-pressed', String(selection.scenario === 'decode'))
-    refs.status.textContent = `선택됨 · ${selection.entityId} · ${selection.scenario}`
-    renderInspector(refs.inspector, buildInspectorModel(data.documents[selection.scenario], selection.entityId), data)
+    const model = buildInspectorModel(data.documents[selection.scenario], selection.entityId)
+    refs.status.textContent = `선택됨 · ${entityLabel(model.entity)} · ${selection.scenario}`
+    refs.status.setAttribute('aria-description', selection.entityId)
+    renderInspector(refs.inspector, model, data)
     if (activate) openInspector(true)
   }
   const handle = createExplorer(refs.explorer, data.documents, select)

@@ -1,4 +1,5 @@
 import type { CaptureDocument, Entity } from './schema';
+import { entityLabel } from './entity-label';
 
 export function buildBlockFlowModel(document: CaptureDocument, selectedId: string) {
   const entities = new Map(document.entities.map(entity => [entity.id, entity]));
@@ -32,7 +33,7 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
     node.dataset.focusKey = `${className}:${entity.id}`;
     node.setAttribute('aria-description', `${entity.kind} ${entity.id}`);
     node.setAttribute('aria-current', entity.id === model.selectedId ? 'page' : 'false');
-    node.textContent = entity.id; node.addEventListener('click', () => select(entity.id)); return node;
+    node.textContent = entityLabel(entity); node.addEventListener('click', () => select(entity.id)); return node;
   };
   const architecture = element('section', 'model-architecture'); architecture.setAttribute('aria-label', 'Model architecture');
   const header = element('header', 'model-architecture__header');

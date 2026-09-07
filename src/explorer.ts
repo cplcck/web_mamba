@@ -1,6 +1,7 @@
 import { buildGraphModel, renderGraph } from './graph';
 import { buildBlockFlowModel, renderBlockFlow } from './block-flow';
 import type { CaptureDocument, Entity } from './schema';
+import { entityLabel } from './entity-label';
 
 export type ExplorerScenario = 'prefill' | 'decode';
 export type ExplorerSelection = Readonly<{ scenario: ExplorerScenario; entityId: string }>;
@@ -84,7 +85,7 @@ function renderBreadcrumbs(root: HTMLElement, document: CaptureDocument, entityI
   while (current) { path.unshift(current); current = current.parentId === null ? undefined : map.get(current.parentId); }
   const nav = root.querySelector('.breadcrumbs'); if (!(nav instanceof HTMLElement)) return; nav.replaceChildren();
   const list = element(nav.ownerDocument, 'ol', 'breadcrumbs__list');
-  for (const entity of path) { const item = element(nav.ownerDocument, 'li', 'breadcrumbs__item'), link = button(nav.ownerDocument, 'breadcrumbs__link'); link.dataset.focusKey = `breadcrumb:${entity.id}`; link.dataset.entityId = entity.id; link.setAttribute('aria-label', `${entity.kind} ${entity.id}`); link.setAttribute('aria-current', entity.id === entityId ? 'page' : 'false'); link.textContent = entity.id; link.addEventListener('click', () => select(entity.id)); item.append(link); list.append(item); }
+  for (const entity of path) { const item = element(nav.ownerDocument, 'li', 'breadcrumbs__item'), link = button(nav.ownerDocument, 'breadcrumbs__link'); link.dataset.focusKey = `breadcrumb:${entity.id}`; link.dataset.entityId = entity.id; link.setAttribute('aria-description', `${entity.kind} ${entity.id}`); link.setAttribute('aria-current', entity.id === entityId ? 'page' : 'false'); link.textContent = entityLabel(entity); link.addEventListener('click', () => select(entity.id)); item.append(link); list.append(item); }
   nav.append(list);
 }
 function renderHierarchy(root: HTMLElement, document: CaptureDocument, selectedId: string, query: string, select: (id: string) => void): void {
@@ -98,8 +99,8 @@ function renderHierarchy(root: HTMLElement, document: CaptureDocument, selectedI
     row.dataset.entityId = entity.id; row.dataset.focusKey = `hierarchy:${entity.id}`;
     row.setAttribute('aria-description', `${entity.kind} ${entity.id}`); row.setAttribute('aria-current', entity.id === selectedId ? 'page' : 'false');
     row.classList.toggle('hierarchy__row--selected', entity.id === selectedId);
-    row.textContent = `${entity.kind} · ${entity.id}`; row.addEventListener('click', () => select(entity.id)); item.append(row);
-    for (const match of matches) { const text = element(nav.ownerDocument, 'span', 'hierarchy__match'); text.dataset.matchKind = match.matchKind; text.textContent = match.matchText; row.append(text); }
+    row.textContent = entityLabel(entity); row.addEventListener('click', () => select(entity.id)); item.append(row);
+    for (const match of matches.filter(match => match.matchKind === 'tensor')) { const text = element(nav.ownerDocument, 'span', 'hierarchy__match'); text.dataset.matchKind = match.matchKind; text.textContent = match.matchText; row.append(text); }
     parent.append(item);
   };
   if (searching) {
@@ -111,10 +112,11 @@ function renderHierarchy(root: HTMLElement, document: CaptureDocument, selectedI
   nav.append(list);
 }
 type SelectionReason = 'selected' | 'invalid-route' | 'ancestor-fallback';
-function renderStatus(root: HTMLElement, selection: ExplorerSelection, reason: SelectionReason): void {
+function renderStatus(root: HTMLElement, selection: ExplorerSelection, reason: SelectionReason, document: CaptureDocument): void {
   const status = root.querySelector<HTMLElement>('.explorer__status');
+  const entity = document.entities.find(entity => entity.id === selection.entityId);
   const messages = { selected: '선택됨', 'invalid-route': '유효하지 않은 선택 경로입니다. 표시 가능한 항목으로 이동했습니다.', 'ancestor-fallback': '이 scenario에 이전 항목이 없어 가장 가까운 상위 항목으로 이동했습니다.' };
-  if (status) { status.dataset.reason = reason; status.textContent = `${messages[reason]} · ${selection.entityId} · ${selection.scenario}`; }
+  if (status && entity) { status.dataset.reason = reason; status.textContent = `${messages[reason]} · ${entityLabel(entity)} · ${selection.scenario}`; status.setAttribute('aria-description', selection.entityId); }
 }
 const isContentAnchor = (hash: string): boolean => hash.length > 1 && !/(?:^#|&)(?:scenario|entity)=|^#(?:prefill|decode)\//.test(hash);
 
@@ -145,7 +147,7 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
     renderBlockFlow(blockFlow, buildBlockFlowModel(documents[current.scenario], current.entityId), selectEntity);
     const graph = buildGraphModel(documents[current.scenario], current.entityId);
     evidenceSummary.textContent = `전체 tensor / edge 데이터 · ${graph.nodes.length} nodes · ${graph.edges.length} edges`;
-    graphCleanup(); graphCleanup = renderGraph(graphHost, document, graph, selectEntity); renderStatus(host, current, reason);
+    graphCleanup(); graphCleanup = renderGraph(graphHost, document, graph, selectEntity); renderStatus(host, current, reason, documents[current.scenario]);
     const selected = mapEntities(documents[current.scenario]).get(current.entityId)!;
     const boundary = element(document, 'p', 'explorer__boundary');
     boundary.dataset.entityId = selected.id; boundary.dataset.kind = selected.kind; boundary.dataset.scenario = current.scenario;
@@ -173,7 +175,7 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   const apply = (next: ExplorerSelection, push: boolean, nextReason: SelectionReason, activate = false): void => {
     if (destroyed) return;
     reason = nextReason;
-    if (next.scenario === current.scenario && next.entityId === current.entityId) { canonicalize(); renderStatus(host, current, reason); if (activate) onSelection(current, true); return; }
+    if (next.scenario === current.scenario && next.entityId === current.entityId) { canonicalize(); renderStatus(host, current, reason, documents[current.scenario]); if (activate) onSelection(current, true); return; }
     current = next;
     if (push && view) view.history.pushState({ ...next }, '', encodeSelectionHash(next)); else canonicalize();
     handledHash = view?.location.hash ?? '';

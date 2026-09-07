@@ -1,11 +1,46 @@
 import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import { validateDocument } from '../src/schema';
-import { arm, changed, closeInspector, installReadiness, mounted } from './browser-helpers';
+import { arm, changed, closeInspector, installReadiness, mounted, openAdvanced } from './browser-helpers';
 
 const capture = validateDocument(JSON.parse(readFileSync('public/data/prefill.json', 'utf8')));
 const architectureIds = ['model/embedding', 'blocks', 'model/final-normalization', 'model/final-projection'];
 test.beforeEach(async ({ page }) => { await installReadiness(page); });
+
+test('operators share their parent display name but retain independent selections', async ({ page }) => {
+  // Given: two actual operators belonging to the same model stage.
+  const stage = capture.entities.find(entity => entity.id === 'model/final-normalization');
+  if (!stage) throw new Error('Final normalization fixture missing');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`./#scenario=prefill&entity=${encodeURIComponent(stage.id)}`); await mounted(page);
+  expect(await page.locator('.operator-choice').allTextContents()).toEqual(stage.children.map(() => stage.id));
+  // When / Then: identical visible names do not merge distinct operator actions.
+  for (const id of stage.children) {
+    const entity = capture.entities.find(entity => entity.id === id);
+    if (!entity) throw new Error('Operator fixture missing');
+    await arm(page, `.inspector[data-entity-id="${id}"]`);
+    await page.locator(`.operator-choice[data-entity-id="${id}"]`).click(); await changed(page);
+    expect(new URL(page.url()).hash).toBe(`#scenario=prefill&entity=${encodeURIComponent(id)}`);
+    expect(await page.locator('.inspector__title').textContent()).toBe(stage.id);
+    expect(await page.locator('.breadcrumbs [aria-current=page]').textContent()).toBe(stage.id);
+    expect(await page.locator('.summary-section--weights').getAttribute('data-count')).toBe(String(entity.weightTensorIds.length));
+    expect(await page.locator(`.operator-choice[data-entity-id="${id}"]`).getAttribute('aria-description')).toContain(id);
+    expect(await page.locator('.graph-node__content').allTextContents()).toEqual([stage.id]);
+    expect(await page.locator('.graph-list__node').allTextContents()).toEqual([stage.id]);
+    expect(await page.locator('.graph-list__edge').allTextContents()).toEqual(expect.not.arrayContaining([expect.stringContaining(id)]));
+    await openAdvanced(page);
+    expect(await page.locator('#operator-evidence').count()).toBe(1);
+    const output = capture.tensors.find(tensor => entity.outputTensorIds.includes(tensor.id));
+    if (!output) throw new Error('Operator output fixture missing');
+    for (const field of ['opParamsI32', 'schedulerObserved', 'arithmeticExecution'] as const) {
+      expect(await page.locator(`#operator-evidence [data-field="${field}"] td`).textContent()).toBe(JSON.stringify(output[field]));
+    }
+  }
+  // Original IDs remain searchable while the result name uses the parent stage.
+  await arm(page, '.hierarchy__search-status', 'data-result-count', '1');
+  await page.locator('.hierarchy__search').fill(stage.children[0] ?? ''); await changed(page);
+  expect(await page.locator('.hierarchy__row').allTextContents()).toEqual([stage.id]);
+});
 
 test('navigation accessible names include their visible labels', async ({ page }) => {
   // Given: model and block navigation use the real rendered labels.

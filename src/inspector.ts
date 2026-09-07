@@ -1,6 +1,7 @@
 // allow: SIZE_OK - task9 owns the complete inspector in this file; shared ownership forbids a new product module.
 import { evalFormula, SchemaError, storageAccounting, type CaptureDocument, type Entity, type Tensor } from './schema'
 import type { PublicBundle } from './public-data'
+import { entityLabel } from './entity-label'
 
 export const INSPECTOR_SECTION_KINDS = ['inputs', 'outputs', 'weights'] as const
 export type InspectorSectionKind = (typeof INSPECTOR_SECTION_KINDS)[number]
@@ -439,7 +440,8 @@ export function renderInspector(host: HTMLElement, model: InspectorModel, bundle
   host.replaceChildren(); host.dataset.entityId = model.entity.id; host.dataset.scenario = model.document.scenario.name
   host.scrollTop = 0
   const heading = element('h2', 'inspector__title')
-  heading.id = 'inspector-selection'; heading.textContent = model.entity.id
+  heading.id = 'inspector-selection'; heading.textContent = entityLabel(model.entity)
+  heading.setAttribute('aria-description', model.entity.id)
   const header = element('header', 'inspector__header')
   const identity = element('p', 'inspector__identity'); identity.textContent = `${model.entity.kind} / ${model.document.scenario.name}`
   header.append(identity, heading)
@@ -485,6 +487,14 @@ export function renderInspector(host: HTMLElement, model: InspectorModel, bundle
 }
 
 function renderFullInspector(host: HTMLElement, model: InspectorModel, bundle?: PublicBundle): void {
+  if (model.entity.kind === 'operator') {
+    const output = model.document.tensors.find(tensor => model.entity.outputTensorIds.includes(tensor.id))
+    if (output?.op !== undefined && output.opParamsI32 !== undefined && output.schedulerObserved !== undefined && output.arithmeticExecution !== undefined) {
+      const evidence = panel('operator-evidence', '연산 캡처 근거')
+      evidence.append(metadataTable({ id: model.entity.id, op: output.op, opParamsI32: output.opParamsI32, schedulerObserved: output.schedulerObserved, arithmeticExecution: output.arithmeticExecution }))
+      host.append(evidence)
+    }
+  }
   for (const sectionModel of model.sections) {
     const section = element('section', `tensor-section tensor-section--${sectionModel.kind}`)
     section.setAttribute('aria-labelledby', `${sectionModel.kind}-heading`)

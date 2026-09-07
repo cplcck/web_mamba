@@ -1,4 +1,5 @@
 import type { CaptureDocument, Entity, OperatorEvidence, Tensor } from './schema';
+import { entityLabel } from './entity-label';
 
 export type GraphEdgeRole = 'input' | 'output' | 'weight' | 'state';
 type Marker = 'circle' | 'diamond' | 'square' | 'triangle';
@@ -57,7 +58,7 @@ export function buildGraphModel(document: CaptureDocument, entityId: string): Gr
     const output = item.kind === 'operator' && outputId ? tensorMap.get(outputId) : undefined;
     const evidence = output?.op !== undefined && output.opParamsI32 !== undefined && output.schedulerObserved !== undefined && output.arithmeticExecution !== undefined
       ? { op: output.op, opParamsI32: output.opParamsI32, schedulerObserved: output.schedulerObserved, arithmeticExecution: output.arithmeticExecution } : null;
-    return { entityId: item.id, kind: item.kind, label: item.id, selected: item.id === entityId, evidence };
+    return { entityId: item.id, kind: item.kind, label: entityLabel(item), selected: item.id === entityId, evidence };
   });
   const edges: GraphEdge[] = [], seen = new Set<string>();
   for (const tensor of document.tensors) {
@@ -83,12 +84,13 @@ export function buildGraphModel(document: CaptureDocument, entityId: string): Gr
   addBoundary(entity.inputTensorIds, 'input');
   addBoundary(entity.outputTensorIds, 'output');
   addBoundary(entity.weightTensorIds, 'weight');
-  return { nodes, edges, listEdges: edges };
+  const endpointLabel = (id: string): string => { const endpoint = entityMap.get(id); return endpoint ? entityLabel(endpoint) : id; };
+  const displayEdges = edges.map(edge => ({ ...edge, label: `${edge.role} · ${edge.tensorName} · ${endpointLabel(edge.sourceId)} → ${endpointLabel(edge.targetId)}` }));
+  return { nodes, edges: displayEdges, listEdges: displayEdges };
 }
 
 function nodeLabel(node: GraphNode): string {
-  const evidence = node.evidence;
-  return `${node.kind === 'block' ? node.label : `${node.kind} · ${node.label}`}${evidence ? ` · ${evidence.op} · schedulerObserved=${evidence.schedulerObserved} · arithmeticExecution=${evidence.arithmeticExecution}${evidence.arithmeticExecution ? '' : ' · metadata / no arithmetic'} · opParamsI32=[${evidence.opParamsI32.join(', ')}]` : ''}`;
+  return node.kind === 'block' || node.kind === 'operator' ? node.label : `${node.kind} · ${node.label}`;
 }
 function edgeAttributes(element: Element, edge: GraphEdge): void {
   element.setAttribute('data-edge-key', edge.key); element.setAttribute('data-edge-role', edge.role);
@@ -137,12 +139,14 @@ export function renderGraph(host: HTMLElement, document: Document, model: GraphM
     group.setAttribute('class', `graph-node${node.selected ? ' graph-node--selected' : ''}${node.evidence?.arithmeticExecution === false ? ' graph-node--metadata' : ''}`);
     group.setAttribute('data-entity-id', node.entityId); group.setAttribute('data-focus-key', `graph-node:${node.entityId}`);
     group.setAttribute('tabindex', '0'); group.setAttribute('role', 'button'); group.setAttribute('aria-pressed', String(node.selected)); group.setAttribute('aria-label', nodeLabel(node));
+    group.setAttribute('aria-description', `${node.kind} ${node.entityId}`);
     if (node.evidence) { group.dataset.op = node.evidence.op; group.dataset.schedulerObserved = String(node.evidence.schedulerObserved); group.dataset.arithmeticExecution = String(node.evidence.arithmeticExecution); }
     rect.setAttribute('class', 'graph-node__shape'); const text = textBox(nodeLabel(node), 'graph-node__content');
     group.append(rect, text.box); svg.append(group); interactive(group, node.entityId, select, cleanup);
     const item = document.createElement('li'), button = document.createElement('button'); button.type = 'button';
     button.className = `graph-list__node${node.selected ? ' graph-list__node--selected' : ''}`; button.dataset.entityId = node.entityId; button.dataset.focusKey = `graph-list:${node.entityId}`;
     button.setAttribute('aria-pressed', String(node.selected)); button.textContent = nodeLabel(node);
+    button.setAttribute('aria-description', `${node.kind} ${node.entityId}`);
     if (node.evidence) { button.dataset.op = node.evidence.op; button.dataset.schedulerObserved = String(node.evidence.schedulerObserved); button.dataset.arithmeticExecution = String(node.evidence.arithmeticExecution); }
     const onClick = (): void => select(node.entityId); button.addEventListener('click', onClick); cleanup.push(() => button.removeEventListener('click', onClick)); item.append(button); list.append(item);
     return { node, group, rect, ...text };

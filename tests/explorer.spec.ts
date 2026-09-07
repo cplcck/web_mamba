@@ -100,7 +100,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024
     expect(await selection(page).getAttribute('data-entity-id')).toBe('block.23');
     await arm(page, '.hierarchy__list', 'hidden', ''); await search.press('Escape'); await changed(page);
     expect(await search.inputValue()).toBe('');
-    await arm(page, '.hierarchy__match'); await search.fill('  SSM_SCAN  '); await changed(page);
+    await arm(page, '.hierarchy__search-status', 'data-result-count', '24'); await search.fill('  SSM_SCAN  '); await changed(page);
     expect(Number(await page.locator('.hierarchy__search-status').getAttribute('data-result-count'))).toBe(24);
     const found = page.locator('.hierarchy__row').first();
     const operatorId = (await found.getAttribute('data-entity-id'))!;
