@@ -38,6 +38,9 @@
   --rail-width-wide: 232px;
   --rail-width-medium: 208px;
   --inspector-width-wide: 360px;
+  --inspector-width-min: 320px;
+  --explorer-width-min: 400px;
+  --pane-splitter-width: 44px;
   --skeleton-flow-node-width: 280px;
   --model-card-height: 112px;
   --stage-card-width: 160px;
@@ -71,8 +74,15 @@ button:focus-visible, input:focus-visible, a:focus-visible, summary:focus-visibl
 .scenario-switch__button, .action-button { min-block-size: var(--action-target); min-inline-size: var(--action-target); border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--color-text-secondary); cursor: pointer; font-size: var(--type-touch); font-weight: 500; padding-inline: var(--space-3); transition: none; }
 .scenario-switch__button:hover, .scenario-switch__button[aria-pressed="true"], .scenario-switch__button:active, .action-button:hover { border-color: var(--color-accent); background: var(--color-surface-raised); color: var(--color-accent); }
 .scenario-switch__button:disabled { border-color: transparent; background: transparent; color: var(--color-text-tertiary); cursor: not-allowed; }
-.workspace { display: grid; grid-template-columns: minmax(0, 1fr) var(--inspector-width-wide); gap: var(--space-4); min-block-size: 0; min-inline-size: 0; padding: var(--space-5); }
-.explorer { overflow-y: auto; overscroll-behavior: contain; min-block-size: 0; min-inline-size: 0; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) var(--pane-splitter-width) var(--inspector-width, var(--inspector-width-wide)); gap: 0; min-block-size: 0; min-inline-size: 0; padding: var(--space-5); }
+.workspace > .inspector-pane { grid-column: 3; }
+.explorer { grid-column: 1; container: explorer / inline-size; overflow-y: auto; overscroll-behavior: contain; min-block-size: 0; min-inline-size: 0; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); }
+.pane-splitter { grid-column: 2; position: relative; min-block-size: var(--action-target); cursor: col-resize; touch-action: none; border-radius: var(--radius-control); }
+.pane-splitter::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 50%; border-inline-start: 1px solid var(--color-border); }
+.pane-splitter::after { content: ""; position: absolute; inset-block-start: 50%; inset-inline-start: 50%; transform: translate(-50%, -50%); inline-size: var(--space-1); block-size: var(--space-10); border-radius: var(--radius-control); background: var(--color-text-tertiary); }
+.pane-splitter:hover::after, .pane-splitter:focus-visible::after, .pane-resizing .pane-splitter::after { background: var(--color-accent); }
+.pane-splitter[hidden] { display: none; }
+.pane-resizing, .pane-resizing * { cursor: col-resize; user-select: none; }
 .hierarchy, .operator-graph, .inspector { min-block-size: 0; min-inline-size: 0; scrollbar-color: var(--color-border) var(--color-surface); }
 .hierarchy { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; padding: var(--space-4) var(--space-4) 0; }
 .breadcrumbs { min-inline-size: 0; padding: var(--space-4) var(--space-4) 0; }
@@ -222,6 +232,7 @@ button:focus-visible, input:focus-visible, a:focus-visible, summary:focus-visibl
 
 @media (max-width: 1024px) {
   .workspace { grid-template-columns: minmax(0, 1fr); }
+  .pane-splitter { display: none; }
   .workspace > .inspector-pane { display: none; }
   .inspector-toggle, .inspector-close { display: inline-block; }
   .topbar { grid-template-columns: minmax(0, 1fr) auto; }
@@ -245,6 +256,13 @@ button:focus-visible, input:focus-visible, a:focus-visible, summary:focus-visibl
   .operator-graph { padding-inline: var(--space-3); }
   .inspector { padding: 0 var(--space-3) var(--space-3); }
   .tensor-table th { inline-size: 44%; }
+}
+
+@container explorer (max-width: 680px) {
+  .model-flow { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.4fr) repeat(2, minmax(0, .85fr)); gap: var(--space-3); }
+  .model-flow__arrow { inline-size: var(--space-3); }
+  .model-card { padding: var(--space-1); }
+  .model-card__name { font-size: var(--type-body-compact); }
 }
 
 @media (prefers-reduced-motion: reduce) {

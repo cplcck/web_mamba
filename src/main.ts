@@ -3,6 +3,7 @@ import { SchemaError, validateDocument, type CaptureDocument, type ExpectedIdent
 import { validatePublicBundle, type PublicBundle } from './public-data'
 import type { ExplorerSelection } from './explorer'
 import { entityLabel } from './entity-label'
+import { connectPaneResize } from './pane-resize'
 
 type Scenario = 'prefill' | 'decode'
 
@@ -144,13 +145,18 @@ function shell(root: HTMLElement, loading = true) {
   const close = element('button', 'action-button inspector-close'); close.type = 'button'; close.textContent = '닫기'; close.autofocus = true
   toolbar.append(label, close); pane.append(toolbar, inspector)
   const dialog = element('dialog', 'inspector-dialog'); dialog.id = 'inspector-dialog'; dialog.setAttribute('aria-labelledby', label.id)
-  workspace.append(explorer, pane)
+  const splitter = element('div', 'pane-splitter'); splitter.hidden = true; splitter.tabIndex = -1
+  splitter.setAttribute('role', 'separator'); splitter.setAttribute('aria-orientation', 'vertical')
+  splitter.setAttribute('aria-labelledby', label.id); splitter.setAttribute('aria-controls', inspector.id)
+  splitter.title = '좌우로 드래그하여 선택 정보 너비 조절'
+  workspace.append(explorer, splitter, pane)
   app.append(topbar, workspace, dialog); root.append(skip, app)
-  return { explorer, inspector, status, buttons, pane, dialog, close, toggle, workspace }
+  return { explorer, inspector, status, buttons, pane, dialog, close, toggle, workspace, splitter }
 }
 
 function connectInspectorPane(refs: ReturnType<typeof shell>): (activate: boolean) => void {
   const compact = matchMedia('(max-width: 1024px)')
+  const resizePane = connectPaneResize(refs.workspace, refs.splitter, compact)
   let returnFocus: HTMLElement | SVGElement | null = null
   const open = (activate: boolean): void => {
     const active = document.activeElement
@@ -174,6 +180,7 @@ function connectInspectorPane(refs: ReturnType<typeof shell>): (activate: boolea
     const focused = refs.pane.contains(document.activeElement)
     if (compact.matches) { refs.dialog.append(refs.pane); if (focused) open(false) }
     else { if (refs.dialog.open) refs.dialog.close(); refs.workspace.append(refs.pane) }
+    resizePane()
   }
   compact.addEventListener('change', reflow); reflow()
   refs.toggle.disabled = false
