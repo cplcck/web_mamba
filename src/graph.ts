@@ -88,7 +88,7 @@ export function buildGraphModel(document: CaptureDocument, entityId: string): Gr
 
 function nodeLabel(node: GraphNode): string {
   const evidence = node.evidence;
-  return `${node.kind} · ${node.label}${evidence ? ` · ${evidence.op} · schedulerObserved=${evidence.schedulerObserved} · arithmeticExecution=${evidence.arithmeticExecution}${evidence.arithmeticExecution ? '' : ' · metadata / no arithmetic'} · opParamsI32=[${evidence.opParamsI32.join(', ')}]` : ''}`;
+  return `${node.kind === 'block' ? node.label : `${node.kind} · ${node.label}`}${evidence ? ` · ${evidence.op} · schedulerObserved=${evidence.schedulerObserved} · arithmeticExecution=${evidence.arithmeticExecution}${evidence.arithmeticExecution ? '' : ' · metadata / no arithmetic'} · opParamsI32=[${evidence.opParamsI32.join(', ')}]` : ''}`;
 }
 function edgeAttributes(element: Element, edge: GraphEdge): void {
   element.setAttribute('data-edge-key', edge.key); element.setAttribute('data-edge-role', edge.role);

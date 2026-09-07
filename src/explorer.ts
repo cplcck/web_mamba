@@ -136,7 +136,7 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   const evidence = document.createElement('details'); evidence.className = 'graph-evidence';
   const evidenceSummary = element(document, 'summary', 'graph-evidence__summary');
   evidence.append(evidenceSummary, graphHost);
-  host.replaceChildren(breadcrumbs, blockFlow, hierarchy, evidence, status);
+  host.replaceChildren(hierarchy, breadcrumbs, blockFlow, evidence, status);
   const render = (): void => {
     if (destroyed) return;
     const active = document.activeElement, focusKey = active && host.contains(active) ? active.getAttribute('data-focus-key') : null;

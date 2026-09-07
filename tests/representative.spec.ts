@@ -64,7 +64,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024
       if (index > 0) expect(rect.x).toBeGreaterThan(architecture[index - 1]?.right ?? Infinity);
     });
     expect(await page.locator('.model-flow__arrow').count()).toBe(3);
-    expect(await page.locator('.model-flow').evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThan(await page.locator('.hierarchy__search').evaluate(node => node.getBoundingClientRect().top));
+    expect(await page.locator('.hierarchy').evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(await page.locator('.breadcrumbs').evaluate(node => node.getBoundingClientRect().top));
+    expect(await page.locator('.hierarchy__search').evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThan(await page.locator('.model-flow').evaluate(node => node.getBoundingClientRect().top));
+    const blockLabels = await page.locator('.graph-list__node[data-entity-id^="block."]').evaluateAll(nodes => nodes.map(node => ({ id: node.getAttribute('data-entity-id'), label: node.textContent })));
+    expect(blockLabels).toHaveLength(24);
+    for (const node of blockLabels) expect(node.label).toBe(node.id);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(viewport.height);
     await info.attach('architecture-positions.json', { body: JSON.stringify(architecture, null, 2), contentType: 'application/json' });
