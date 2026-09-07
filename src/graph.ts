@@ -2,21 +2,17 @@ import type { CaptureDocument, Entity, OperatorEvidence, Tensor } from './schema
 import { entityLabel } from './entity-label';
 
 export type GraphEdgeRole = 'input' | 'output' | 'weight' | 'state';
-type Marker = 'circle' | 'diamond' | 'square' | 'triangle';
 export type GraphNode = Readonly<{ entityId: string; kind: Entity['kind']; label: string; selected: boolean; evidence: OperatorEvidence | null }>;
 export type GraphEdge = Readonly<{
   key: string; tensorId: string; tensorName: string; role: GraphEdgeRole;
-  sourceId: string; targetId: string; label: string; marker: Marker;
+  sourceId: string; targetId: string; label: string;
 }>;
 export type GraphModel = Readonly<{ nodes: readonly GraphNode[]; edges: readonly GraphEdge[]; listEdges: readonly GraphEdge[] }>;
 type SelectEntity = (entityId: string) => void;
 type BoxPosition = Readonly<{ x: number; y: number; width: number; height: number }>;
 type TextBox = Readonly<{ box: SVGForeignObjectElement; content: HTMLDivElement }>;
 
-const markers: Readonly<Record<GraphEdgeRole, Marker>> = {
-  input: 'circle', output: 'triangle', weight: 'diamond', state: 'square',
-};
-const graphGeometry = { inset: 32, cardInset: 12, gap: 64, rowGap: 24, portGap: 16, markerOffset: 16, minCardHeight: 72, naturalWidth: 960, wideMin: 800 } as const;
+const graphGeometry = { inset: 16, cardInset: 12, sideGap: 24, rowGap: 32, portGap: 16, arrowOffset: 8, minCardHeight: 72, maxCardWidth: 320, naturalWidth: 960 } as const;
 const entitiesById = (document: CaptureDocument): ReadonlyMap<string, Entity> =>
   new Map(document.entities.map(entity => [entity.id, entity]));
 const tensorsById = (document: CaptureDocument): ReadonlyMap<string, Tensor> =>
@@ -40,7 +36,7 @@ function addEdge(edges: GraphEdge[], seen: Set<string>, tensor: Tensor, role: Gr
   const key = `${role}:${tensor.id}:${sourceId}->${targetId}`;
   if (seen.has(key)) return;
   seen.add(key);
-  edges.push({ key, tensorId: tensor.id, tensorName: tensor.name, role, sourceId, targetId, label: `${role} · ${tensor.name} · ${sourceId} → ${targetId}`, marker: markers[role] });
+  edges.push({ key, tensorId: tensor.id, tensorName: tensor.name, role, sourceId, targetId, label: `${role} · ${tensor.name} · ${sourceId} → ${targetId}` });
 }
 
 export function buildGraphModel(document: CaptureDocument, entityId: string): GraphModel {
@@ -105,15 +101,6 @@ function edgeAttributes(element: Element, edge: GraphEdge): void {
   element.setAttribute('data-edge-key', edge.key); element.setAttribute('data-edge-role', edge.role);
   element.setAttribute('data-source-id', edge.sourceId); element.setAttribute('data-target-id', edge.targetId);
 }
-function markerShape(document: Document, marker: Marker, x: number, y: number, className = 'edge-marker'): SVGElement {
-  const tag = marker === 'circle' ? 'circle' : marker === 'square' ? 'rect' : marker === 'diamond' ? 'path' : 'path';
-  const shape = document.createElementNS('http://www.w3.org/2000/svg', tag);
-  if (tag === 'circle') { shape.setAttribute('cx', String(x)); shape.setAttribute('cy', String(y)); shape.setAttribute('r', '5'); }
-  if (tag === 'rect') { shape.setAttribute('x', String(x - 5)); shape.setAttribute('y', String(y - 5)); shape.setAttribute('width', '10'); shape.setAttribute('height', '10'); }
-  if (tag === 'path') { shape.setAttribute('d', marker === 'diamond' ? `M ${x} ${y - 6} L ${x + 6} ${y} L ${x} ${y + 6} L ${x - 6} ${y} Z` : `M ${x} ${y - 6} L ${x + 6} ${y + 6} L ${x - 6} ${y + 6} Z`); }
-  shape.setAttribute('class', `${className} ${className}--${marker}`);
-  return shape;
-}
 function interactive(element: SVGElement, entityId: string, select: SelectEntity, cleanup: Array<() => void>): void {
   const activate = (event: Event): void => { event.preventDefault(); select(entityId); };
   const keydown = (event: KeyboardEvent): void => { if (event.key === 'Enter' || event.key === ' ') activate(event); };
@@ -139,7 +126,6 @@ export function renderGraph(host: HTMLElement, document: Document, model: GraphM
   const toolbar = document.createElement('div'); toolbar.className = 'graph-toolbar';
   const fit = document.createElement('button'); fit.type = 'button'; fit.className = 'graph-toolbar__fit'; fit.textContent = '흐름도 너비 맞추기';
   const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'graph-toolbar__reset'; reset.textContent = '기본 보기로 돌아가기';
-  const legend = document.createElement('figcaption'); legend.className = 'graph-legend'; legend.setAttribute('aria-label', 'Actual edge roles');
   const list = document.createElement('ol'); list.className = 'graph-list'; list.setAttribute('aria-label', 'Entity and tensor edge list');
   const textBox = (text: string, className: string): TextBox => {
     const box = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject'), content = document.createElement('div');
@@ -149,8 +135,10 @@ export function renderGraph(host: HTMLElement, document: Document, model: GraphM
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g'), line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     edgeAttributes(line, edge); line.setAttribute('class', `graph-edge graph-edge--${edge.role}`); line.setAttribute('aria-label', edge.label);
     const edgeTitle = document.createElementNS('http://www.w3.org/2000/svg', 'title'); edgeTitle.classList.add('graph-edge__caption'); edgeTitle.textContent = edge.label;
-    line.append(edgeTitle); group.append(line); svg.append(group);
-    return { edge, group, line };
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    arrow.setAttribute('class', `graph-arrow graph-edge--${edge.role}`); arrow.setAttribute('d', 'M -5 -5 L 0 0 L 5 -5'); arrow.setAttribute('aria-hidden', 'true');
+    line.append(edgeTitle); group.append(line, arrow); svg.append(group);
+    return { edge, group, line, arrow };
   });
   const nodeViews = model.nodes.map(node => {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g'), rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -179,28 +167,22 @@ export function renderGraph(host: HTMLElement, document: Document, model: GraphM
     }
   }
   const tensorViews = [...endpointEdges.entries()].map(([endpoint, { edge, boundaryRole }]) => {
+    const isWeight = edge.role === 'weight' && boundaryRole !== 'output';
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.setAttribute('class', `graph-tensor graph-tensor--${boundaryRole}${edge.role === 'state' ? ' graph-tensor--state' : ''}`); group.dataset.endpointId = endpoint; group.dataset.tensorId = edge.tensorId; group.dataset.boundaryRole = boundaryRole;
+    group.setAttribute('class', `graph-tensor graph-tensor--${boundaryRole}${isWeight ? ' graph-tensor--weight' : ''}${edge.role === 'state' ? ' graph-tensor--state' : ''}`); group.dataset.endpointId = endpoint; group.dataset.tensorId = edge.tensorId; group.dataset.boundaryRole = boundaryRole;
     group.setAttribute('aria-label', `tensor ${edge.tensorName} / ${boundaryRole} / ${edge.role}`);
     const shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); shape.setAttribute('class', 'graph-tensor__shape');
     const kindLabels = { input: '입력 텐서 / input', output: '출력 텐서 / output', weight: '가중치 텐서 / weight' } as const;
-    const kind = textBox(`${kindLabels[boundaryRole]}${edge.role === 'state' ? ' / state' : ''}`, 'graph-tensor__kind');
+    const kind = textBox(`${kindLabels[isWeight ? 'weight' : boundaryRole]}${edge.role === 'state' ? ' / state' : ''}`, 'graph-tensor__kind');
     const name = textBox('tensor name : ', 'graph-tensor__content');
     const value = document.createElement('span'); value.className = 'graph-tensor__name'; value.textContent = edge.tensorName; name.content.append(value);
     group.append(shape, kind.box, name.box); svg.append(group);
-    return { endpoint, boundaryRole, group, shape, kind, name };
+    return { endpoint, boundaryRole, isWeight, consumerId: edge.targetId, group, shape, kind, name };
   });
   for (const edge of model.listEdges) {
     const item = document.createElement('li'); item.className = `graph-list__edge graph-list__edge--${edge.role}`; edgeAttributes(item, edge); item.textContent = edge.label; list.append(item);
   }
-  for (const role of [...new Set(model.edges.map(edge => edge.role))]) {
-    const item = document.createElement('span'); item.className = 'graph-legend__item'; item.dataset.edgeRole = role;
-    const sample = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); sample.setAttribute('class', 'graph-legend__sample'); sample.setAttribute('viewBox', '0 0 48 20'); sample.setAttribute('aria-hidden', 'true');
-    const sampleLine = document.createElementNS('http://www.w3.org/2000/svg', 'path'); sampleLine.setAttribute('class', `graph-legend__line graph-legend__line--${role}`); sampleLine.setAttribute('d', 'M 2 10 C 14 10, 22 10, 34 10');
-    const sampleMarker = markerShape(document, markers[role], 38, 10, 'graph-legend__marker');
-    sample.append(sampleLine, sampleMarker); item.append(sample, document.createTextNode(role)); legend.append(item);
-  }
-  toolbar.append(fit, reset); host.replaceChildren(toolbar, legend, viewport, list);
+  toolbar.append(fit, reset); host.replaceChildren(toolbar, viewport, list);
   let fitted = false, lastWidth = -1;
   const incoming = new Map<string, GraphEdge[]>(), outgoing = new Map<string, GraphEdge[]>();
   for (const edge of model.edges) {
@@ -208,58 +190,90 @@ export function renderGraph(host: HTMLElement, document: Document, model: GraphM
     const outputs = outgoing.get(edge.sourceId) ?? []; outputs.push(edge); outgoing.set(edge.sourceId, outputs);
   }
   const cards = [
-    ...tensorViews.filter(view => view.boundaryRole !== 'output').map(view => ({ id: view.endpoint, shape: view.shape, fields: [view.kind, view.name], lane: 0 })),
-    ...nodeViews.map(view => ({ id: view.node.entityId, shape: view.rect, fields: [view.kind, view.text], lane: 1 })),
-    ...tensorViews.filter(view => view.boundaryRole === 'output').map(view => ({ id: view.endpoint, shape: view.shape, fields: [view.kind, view.name], lane: 2 })),
+    ...tensorViews.filter(view => !view.isWeight && view.boundaryRole !== 'output').map(view => ({ id: view.endpoint, shape: view.shape, fields: [view.kind, view.name] })),
+    ...nodeViews.map(view => ({ id: view.node.entityId, shape: view.rect, fields: [view.kind, view.text] })),
+    ...tensorViews.filter(view => !view.isWeight && view.boundaryRole === 'output').map(view => ({ id: view.endpoint, shape: view.shape, fields: [view.kind, view.name] })),
   ];
+  const weightCards = tensorViews.filter(view => view.isWeight).map(view => ({ id: view.endpoint, ownerId: view.consumerId, shape: view.shape, fields: [view.kind, view.name] }));
+  const weightsByOwner = new Map<string, typeof weightCards>();
+  for (const card of weightCards) {
+    const weights = weightsByOwner.get(card.ownerId) ?? []; weights.push(card); weightsByOwner.set(card.ownerId, weights);
+  }
+  const weightOwners = new Map(weightCards.map(card => [card.id, card.ownerId]));
+  const primaryOrder = new Map(cards.map((card, index) => [card.id, index]));
   const layout = (): void => {
     const available = Math.max(44, viewport.clientWidth);
     const width = fitted ? available : Math.min(graphGeometry.naturalWidth, available);
-    const narrow = width < graphGeometry.wideMin;
-    const { inset, cardInset, gap, rowGap, portGap, markerOffset, minCardHeight } = graphGeometry;
-    const cardWidth = Math.max(24, narrow ? width - inset * 2 : (width - inset * 2 - gap * 2) / 3);
-    host.dataset.layout = narrow ? 'vertical' : 'horizontal'; host.dataset.view = fitted ? 'fit' : 'natural';
+    const { inset, cardInset, sideGap, rowGap, portGap, arrowOffset, minCardHeight, maxCardWidth } = graphGeometry;
+    const withWeights = weightCards.length > 0;
+    const cardWidth = Math.max(24, Math.min(maxCardWidth, withWeights ? (width - inset * 2 - sideGap) / 2 : width - inset * 2));
+    const mainX = (width - (withWeights ? cardWidth * 2 + sideGap : cardWidth)) / 2;
+    const sideX = mainX + cardWidth + sideGap;
+    host.dataset.layout = 'vertical'; host.dataset.view = fitted ? 'fit' : 'natural';
     svg.setAttribute('width', String(width)); svg.style.inlineSize = String(width) + 'px';
     const positions = new Map<string, BoxPosition>();
-    const laneBottoms: number[] = [inset, inset, inset];
-    let stackedBottom: number = inset;
-    for (const card of cards) {
+    const measure = (card: typeof cards[number]) => {
       const contentWidth = Math.max(1, cardWidth - cardInset * 2);
       for (const field of card.fields) field.box.setAttribute('width', String(contentWidth));
       const heights = card.fields.map(field => field.content.scrollHeight);
-      const ports = Math.max(incoming.get(card.id)?.length ?? 0, outgoing.get(card.id)?.length ?? 0);
-      const height = Math.max(minCardHeight, heights.reduce((sum, value) => sum + value, 0) + cardInset * 2, (ports + 1) * portGap);
-      const y = narrow ? stackedBottom : laneBottoms[card.lane] ?? inset;
-      const x = narrow ? inset : inset + card.lane * (cardWidth + gap);
+      const sidePorts = (incoming.get(card.id) ?? []).filter(edge => weightOwners.has(edge.sourceId)).length;
+      const height = Math.max(minCardHeight, heights.reduce((sum, value) => sum + value, 0) + cardInset * 2, (sidePorts + 1) * portGap);
+      return { card, heights, contentWidth, height };
+    };
+    const place = (measured: ReturnType<typeof measure>, x: number, y: number, height: number): void => {
       const position = { x, y, width: cardWidth, height };
-      positions.set(card.id, position); setBox(card.shape, position);
+      positions.set(measured.card.id, position); setBox(measured.card.shape, position);
       let textY = y + cardInset;
-      for (const [index, field] of card.fields.entries()) {
-        const textHeight = heights[index] ?? 0;
-        setBox(field.box, { x: x + cardInset, y: textY, width: contentWidth, height: textHeight });
+      for (const [index, field] of measured.card.fields.entries()) {
+        const textHeight = measured.heights[index] ?? 0;
+        setBox(field.box, { x: x + cardInset, y: textY, width: measured.contentWidth, height: textHeight });
         textY += textHeight;
       }
-      stackedBottom = y + height + rowGap; laneBottoms[card.lane] = stackedBottom;
+    };
+    let nextY: number = inset;
+    for (const card of cards) {
+      const measured = measure(card), weights = (weightsByOwner.get(card.id) ?? []).map(measure);
+      const weightHeight = weights.reduce((total, weight) => total + weight.height, 0) + Math.max(0, weights.length - 1) * rowGap;
+      const height = Math.max(measured.height, weightHeight);
+      place(measured, mainX, nextY, height);
+      let weightY = nextY + (height - weightHeight) / 2;
+      for (const weight of weights) { place(weight, sideX, weightY, weight.height); weightY += weight.height + rowGap; }
+      nextY += height + rowGap;
     }
     for (const view of edgeViews) {
       const source = positions.get(view.edge.sourceId), target = positions.get(view.edge.targetId);
       if (!source || !target) throw new Error('Graph edge endpoint missing: ' + view.edge.key);
-      const sourcePeers = outgoing.get(view.edge.sourceId) ?? [], targetPeers = incoming.get(view.edge.targetId) ?? [];
-      const sy = source.y + source.height * (sourcePeers.indexOf(view.edge) + 1) / (sourcePeers.length + 1);
-      const ty = target.y + target.height * (targetPeers.indexOf(view.edge) + 1) / (targetPeers.length + 1);
-      const tx = target.x, mx = tx - markerOffset;
-      if (!narrow && source.x < target.x) {
-        const sx = source.x + source.width, bend = (sx + mx) / 2;
-        view.line.setAttribute('d', 'M ' + sx + ' ' + sy + ' C ' + bend + ' ' + sy + ', ' + bend + ' ' + ty + ', ' + mx + ' ' + ty + ' H ' + tx);
+      if (weightOwners.has(view.edge.sourceId)) {
+        const peers = (incoming.get(view.edge.targetId) ?? []).filter(edge => weightOwners.has(edge.sourceId));
+        const ty = target.y + target.height * (peers.indexOf(view.edge) + 1) / (peers.length + 1);
+        const tx = target.x + target.width, rail = tx + sideGap / 2;
+        if (weightOwners.get(view.edge.sourceId) === view.edge.targetId) {
+          const sy = source.y + source.height / 2;
+          view.line.setAttribute('d', 'M ' + source.x + ' ' + sy + ' H ' + rail + ' V ' + ty + ' H ' + tx);
+        } else {
+          const bottom = source.y + source.height;
+          view.line.setAttribute('d', 'M ' + (source.x + source.width / 2) + ' ' + bottom + ' V ' + (bottom + rowGap / 2) + ' H ' + rail + ' V ' + ty + ' H ' + tx);
+        }
+        view.arrow.dataset.direction = 'left';
+        view.arrow.setAttribute('transform', 'translate(' + (tx + arrowOffset) + ' ' + ty + ') rotate(90)');
       } else {
-        const rail = Math.min(source.x, target.x) - inset + 8;
+        const sourcePeers = outgoing.get(view.edge.sourceId) ?? [];
+        const targetPeers = (incoming.get(view.edge.targetId) ?? []).filter(edge => !weightOwners.has(edge.sourceId));
+        const sx = source.x + source.width * (sourcePeers.indexOf(view.edge) + 1) / (sourcePeers.length + 1);
+        const tx = target.x + target.width * (targetPeers.indexOf(view.edge) + 1) / (targetPeers.length + 1);
         const bottom = source.y + source.height;
-        view.line.setAttribute('d', 'M ' + (source.x + source.width / 2) + ' ' + bottom + ' V ' + (bottom + rowGap / 2) + ' H ' + rail + ' V ' + ty + ' H ' + tx);
+        if ((primaryOrder.get(view.edge.sourceId) ?? -2) + 1 === primaryOrder.get(view.edge.targetId)) {
+          const midY = (bottom + target.y) / 2;
+          view.line.setAttribute('d', 'M ' + sx + ' ' + bottom + ' V ' + midY + ' H ' + tx + ' V ' + target.y);
+        } else {
+          const rail = mainX - inset / 2;
+          view.line.setAttribute('d', 'M ' + sx + ' ' + bottom + ' V ' + (bottom + rowGap / 2) + ' H ' + rail + ' V ' + (target.y - rowGap / 2) + ' H ' + tx + ' V ' + target.y);
+        }
+        view.arrow.dataset.direction = 'down';
+        view.arrow.setAttribute('transform', 'translate(' + tx + ' ' + (target.y - arrowOffset) + ')');
       }
-      view.group.querySelector('.edge-marker')?.remove();
-      const marker = markerShape(document, view.edge.marker, mx, ty); marker.classList.add('graph-edge--' + view.edge.role); view.group.append(marker);
     }
-    const height = Math.max(inset, ...(narrow ? [stackedBottom] : laneBottoms)) - rowGap + inset;
+    const height = Math.max(inset * 2, nextY - rowGap + inset);
     svg.setAttribute('height', String(height)); svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
     lastWidth = available;
     host.dispatchEvent(new CustomEvent('graph-layout', { bubbles: true }));
