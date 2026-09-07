@@ -46,6 +46,7 @@
   --stage-card-width: 160px;
   --evidence-height: 320px;
   --operator-list-height: 192px;
+  --graph-legend-sample-width: 48px;
   --radius-control: 4px;
   --radius-panel: 8px;
   --motion-micro: 120ms;
@@ -114,17 +115,34 @@ button:focus-visible, input:focus-visible, a:focus-visible, summary:focus-visibl
 .graph-list button:hover, .hierarchy button:hover, .graph-list button[aria-pressed="true"], .hierarchy button[aria-current="page"] { border-inline-start-color: var(--color-accent); background: var(--color-surface-raised); color: var(--color-text-primary); }
 .operator-graph { max-inline-size: 100%; }
 .graph-viewport { min-inline-size: 0; max-inline-size: 100%; max-block-size: var(--evidence-height); overflow: auto; }
-.operator-graph .graph-svg { display: block; min-inline-size: 0; max-inline-size: none; }
-.graph-node__content, .graph-edge__caption { margin: 0; color: var(--color-text-primary); font: 450 var(--type-meta)/1.4 var(--font-mono); overflow-wrap: anywhere; }
-.graph-node__content p, .graph-edge__caption p { margin: 0; }
+.operator-graph .graph-svg { display: block; min-inline-size: 0; max-inline-size: 100%; overflow: hidden; }
+.graph-node__content, .graph-node__kind, .graph-tensor__kind, .graph-tensor__content, .graph-edge__caption { margin: 0; color: var(--color-text-primary); font: 450 var(--type-meta)/1.4 var(--font-mono); overflow-wrap: anywhere; }
+.graph-node__content, .graph-tensor__name { font-weight: 500; }
+.graph-node__kind, .graph-tensor__kind { color: var(--color-text-secondary); }
+.graph-edge__caption { color: var(--color-text-secondary); font-size: var(--type-caption); pointer-events: none; }
 .graph-legend { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-block: var(--space-3); font-size: var(--type-meta); }
-.edge-marker { fill: var(--color-text-primary); }
+.graph-legend__item { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-text-secondary); text-transform: lowercase; }
+.graph-legend__sample { flex: 0 0 auto; inline-size: var(--graph-legend-sample-width); block-size: var(--space-5); overflow: visible; }
+.graph-legend__line { fill: none; stroke-width: 2px; }
+.graph-legend__line--input { stroke: var(--color-flow-input); stroke-dasharray: var(--space-2) var(--space-1); }
+.graph-legend__line--output { stroke: var(--color-flow-output); }
+.graph-legend__line--weight { stroke: var(--color-flow-weight); stroke-dasharray: var(--space-1) var(--space-1); }
+.graph-legend__line--state { stroke: var(--color-flow-state); stroke-dasharray: var(--space-3) var(--space-1); }
+.graph-legend__item[data-edge-role="input"], .edge-marker.graph-edge--input { color: var(--color-flow-input); }
+.graph-legend__item[data-edge-role="output"], .edge-marker.graph-edge--output { color: var(--color-flow-output); }
+.graph-legend__item[data-edge-role="weight"], .edge-marker.graph-edge--weight { color: var(--color-flow-weight); }
+.graph-legend__item[data-edge-role="state"], .edge-marker.graph-edge--state { color: var(--color-flow-state); }
+.graph-legend__marker { fill: currentColor; }
+.edge-marker { fill: currentColor; }
 .hierarchy__match, .hierarchy__search-status { margin: var(--space-2); color: var(--color-text-secondary); font-size: var(--type-meta); overflow-wrap: anywhere; }
-.graph-node__shape { fill: var(--color-surface-raised); stroke: var(--color-border); }
+.graph-node__shape, .graph-tensor__shape { fill: var(--color-surface-raised); stroke: var(--color-border); }
+.graph-tensor__shape { fill: var(--color-surface); }
 .graph-node--metadata .graph-node__shape { stroke-dasharray: var(--space-2) var(--space-1); }
 .graph-node:hover .graph-node__shape, .graph-node:focus-visible .graph-node__shape, .graph-node--selected .graph-node__shape { stroke: var(--color-accent); }
-.graph-node__kind, .graph-node__label { fill: var(--color-text-secondary); font-family: var(--font-mono); font-size: var(--type-caption); }
-.graph-node__label { fill: var(--color-text-primary); font-size: var(--type-code); }
+.graph-tensor--input .graph-tensor__shape { stroke: var(--color-flow-input); }
+.graph-tensor--output .graph-tensor__shape { stroke: var(--color-flow-output); }
+.graph-tensor--weight .graph-tensor__shape { stroke: var(--color-flow-weight); }
+.graph-tensor--state .graph-tensor__shape { stroke: var(--color-flow-state); }
 .graph-edge { fill: none; stroke-width: 2px; }
 .graph-edge--input { stroke: var(--color-flow-input); stroke-dasharray: var(--space-2) var(--space-1); }
 .graph-edge--output { stroke: var(--color-flow-output); }

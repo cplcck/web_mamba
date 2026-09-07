@@ -279,7 +279,7 @@ function renderSummaryTensor(host: HTMLElement, tensor: InspectorTensor): void {
   const meta = element('p', 'summary-tensor__meta')
   const dtype = element('span'); dtype.dataset.field = 'dtype'; dtype.textContent = tensor.dtype
   const bytes = element('span'); bytes.dataset.field = 'logicalIEC'; bytes.textContent = tensor.logicalIEC
-  meta.append(dtype, ' · ', bytes, ` · ${tensor.role}`)
+  meta.append(dtype, ' / ', bytes, ` / ${tensor.role}`)
   row.append(name, shape, meta); host.append(row)
 }
 

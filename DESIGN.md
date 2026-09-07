@@ -338,6 +338,14 @@ Central flow anatomy:
 4. Equivalent ordered keyboard list containing the same nodes and edge roles.
 5. Optional kernel-internal equation note, explicitly labeled `kernel-internal`, never a fake operator node.
 
+### Graph geometry contract
+
+The graph keeps `GraphModel.nodes`, `edges`, and `listEdges` canonical and renders every actual edge and boundary tensor without sampling. Entity cards remain the sole interactive graph entities: one `.graph-node` and one `.graph-list__node` per original node. Boundary tensors are presentation-only `.graph-tensor` cards keyed by the existing boundary endpoint ID, with `data-tensor-id` and `data-boundary-role` (`input`, `output`, or `weight`); their exact names are copied into a dedicated name field and they are never focusable.
+
+On wide screens the reading direction is input/weight tensor cards -> operator/entity cards -> output tensor cards. Below 800px of graph width, those three lanes stack in that order without overlapping. Every card measures its wrapped text and reserves distinct incoming/outgoing ports at least 16px apart. Markers sit 16px before the destination, outside all cards; same-lane connections leave the source bottom and use the side gutter so outgoing lines cannot obscure incoming markers. Natural width is capped at 960px and the available viewport; width-fit uses the full available width. Both controls return local scrolling to the top-left without changing selection, disclosure state, or captured data. Named graphGeometry values are inset=32px, cardInset=12px, gap=64px, rowGap=24px, portGap=16px, markerOffset=16px, minCardHeight=72px, naturalWidth=960px, wideMin=800px. Legend samples use --graph-legend-sample-width=48px and --space-5 height. Required labels use the existing 14px metadata type; exact tensor names wrap rather than truncate.
+
+Legend entries are generated only for roles present in the actual edge set. Each `.graph-legend__item[data-edge-role]` contains a rendered line and marker sample that is presentation-only and does not carry actual edge keys/classes or the `.edge-marker` test hook.
+
 Inspector anatomy:
 
 1. Exact entity kind, ID, parent, and scenario.

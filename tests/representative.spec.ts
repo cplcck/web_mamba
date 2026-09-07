@@ -126,7 +126,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024
     await page.locator('.block-choice[data-entity-id="block.23"]').click(); await changed(page); await closeInspector(page);
     // Then: eight source-ordered horizontal stages and the inspector use only block.23.
     expect(await representative.getAttribute('aria-expanded')).toBe('false');
-    expect(await page.locator('.summary-section--state .summary-tensor__name').allTextContents()).toEqual(['cache_r_l23', 'cache_s_l23']);
+    expect(await page.locator('.summary-section--state .summary-tensor__name').allTextContents()).toEqual(['tensor name : cache_r_l23', 'tensor name : cache_s_l23']);
     expect(await page.locator('.stage-card').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-entity-id'))))
       .toEqual(capture.entities.find(entity => entity.id === 'block.23')?.children);
     expect(await page.locator('.model-card').count()).toBe(4);
