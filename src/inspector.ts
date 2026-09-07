@@ -274,7 +274,7 @@ function roleExplanation(model: InspectorModel): string {
 
 function renderSummaryTensor(host: HTMLElement, tensor: InspectorTensor): void {
   const row = element('article', 'summary-tensor'); row.dataset.tensorId = tensor.id; row.dataset.role = tensor.role
-  const name = element('h4', 'summary-tensor__name'); name.textContent = tensor.name
+  const name = element('h4', 'summary-tensor__name'); name.textContent = `tensor name : ${tensor.name}`
   const shape = element('p', 'summary-tensor__shape'); shape.dataset.field = 'native ne[4]'; shape.textContent = `native ne[4] ${tensor.nativeShape}`
   const meta = element('p', 'summary-tensor__meta')
   const dtype = element('span'); dtype.dataset.field = 'dtype'; dtype.textContent = tensor.dtype
@@ -452,12 +452,12 @@ export function renderInspector(host: HTMLElement, model: InspectorModel, bundle
   for (const section of compact.sections) {
     const group = element('section', `summary-section summary-section--${section.kind}`)
     group.dataset.section = section.kind; group.dataset.count = String(section.count)
-    const title = element('h3'); title.id = `summary-${section.kind}`; title.textContent = `${section.label} · ${section.count} total`
+    const title = element('h3'); title.id = `summary-${section.kind}`; title.textContent = `${section.label} / total tensors : ${section.count}`
     group.setAttribute('aria-labelledby', title.id); group.append(title)
     const note = element('p', 'summary-section__note')
     note.textContent = section.kind === 'weights'
       ? section.count ? `unique GGUF payload · ${formatIECBytes(section.uniqueGgufPayloadBytes).iec}` : EMPTY_WEIGHT_MESSAGE
-      : `${section.count - section.stateCount - section.indexCount} activation · ${section.indexCount} index · ${section.stateCount} state`
+      : `${section.count - section.stateCount - section.indexCount} activation / ${section.indexCount} index / ${section.stateCount} state`
     group.append(note)
     for (const tensor of section.preview) renderSummaryTensor(group, tensor)
     if (section.count > section.preview.length) {

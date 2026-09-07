@@ -173,7 +173,7 @@ export async function allEntities(page: Page) {
           eq(rows.map(row => row.dataset.tensorId), expected.map(t => t.id), 'meaningful summary preview');
           for (const [i, row] of rows.entries()) {
             const t = expected[i]!;
-            eq(row.querySelector('h4')?.textContent, t.name, 'summary original name');
+            eq(row.querySelector('h4')?.textContent, `tensor name : ${t.name}`, 'summary labeled original name');
             eq(row.dataset.role, t.role, 'summary role');
             eq(row.querySelector('[data-field="native ne[4]"]')?.textContent, `native ne[4] ${tuple(t.nativeShape)}`, 'summary native shape');
             eq(row.querySelector('[data-field=dtype]')?.textContent, t.dtype, 'summary dtype');
