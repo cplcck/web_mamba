@@ -81,6 +81,21 @@ const documents = {
 };
 
 describe('hierarchy navigation contract', () => {
+  it('round-trips the block chooser without inventing a captured entity', () => {
+    // Given
+    const selection: ExplorerSelection = { scenario: 'prefill', entityId: 'model', view: 'blocks' };
+    // When / Then
+    expect(decodeSelectionHash(encodeSelectionHash(selection))).toEqual(selection);
+    expect(resolveScenarioSelection(selection, 'decode', documents)).toEqual({ ...selection, scenario: 'decode' });
+  });
+
+  it('binds the block chooser to the actual model root rather than stale stage data', () => {
+    // Given / When
+    const result = resolveScenarioSelection({ scenario: 'prefill', entityId: 'op-main', view: 'blocks' }, 'decode', documents);
+    // Then
+    expect(result).toEqual({ scenario: 'decode', entityId: 'model', view: 'blocks' });
+  });
+
   it('round-trips scenario and entity IDs through a stable deep link', () => {
     // Given
     const selection: ExplorerSelection = { scenario: 'decode', entityId: 'op/main' };

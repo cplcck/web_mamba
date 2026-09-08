@@ -113,7 +113,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024
     // When: keyboard activation exposes all actual choices without selecting a block.
     await representative.focus();
     await arm(page, '.representative-block__toggle', 'aria-expanded', 'true');
-    await page.keyboard.press('Enter'); await changed(page); await closeInspector(page);
+    await page.keyboard.press('Enter'); await changed(page);
+    expect(await page.locator('dialog').getAttribute('open')).toBeNull();
+    expect(await page.locator('.explorer').getAttribute('data-view')).toBe('blocks');
+    expect(await page.locator('.block-picker-summary').count()).toBe(1);
+    expect(await page.locator('.inspector .summary-section, .graph-node').count()).toBe(0);
     expect(await page.locator('.block-choice:visible').count()).toBe(24);
     expect(await page.locator('.block-choice').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-entity-id'))))
       .toEqual(Array.from({ length: 24 }, (_, index) => `block.${index}`));

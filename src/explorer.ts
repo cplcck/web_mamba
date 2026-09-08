@@ -4,7 +4,7 @@ import type { CaptureDocument, Entity } from './schema';
 import { entityLabel } from './entity-label';
 
 export type ExplorerScenario = 'prefill' | 'decode';
-export type ExplorerSelection = Readonly<{ scenario: ExplorerScenario; entityId: string }>;
+export type ExplorerSelection = Readonly<{ scenario: ExplorerScenario; entityId: string; view?: 'blocks' }>;
 type SearchMatch = Readonly<{ matchText: string; matchKind: 'operator' | 'tensor' }>;
 export type SearchResult = SearchMatch & Readonly<{ entityId: string; matches: readonly SearchMatch[] }>;
 export interface ExplorerHandle { setScenario(scenario: ExplorerScenario): void; selectEntity(entityId: string): void; destroy(): void; }
@@ -19,13 +19,15 @@ function rootOf(document: CaptureDocument): Entity {
 }
 
 export function encodeSelectionHash(selection: ExplorerSelection): string {
-  return `#scenario=${selection.scenario}&entity=${encodeURIComponent(selection.entityId)}`;
+  return `#scenario=${selection.scenario}&entity=${encodeURIComponent(selection.entityId)}${selection.view === 'blocks' ? '&view=blocks' : ''}`;
 }
 export function decodeSelectionHash(hash: string): ExplorerSelection | null {
   const value = hash.startsWith('#') ? hash.slice(1) : hash;
   const params = new URLSearchParams(value);
   const scenario = params.get('scenario'), entityId = params.get('entity');
-  if (scenario && entityId && isScenario(scenario) && entityId.length > 0) return { scenario, entityId };
+  if (scenario && entityId && isScenario(scenario) && entityId.length > 0) {
+    return params.get('view') === 'blocks' ? { scenario, entityId, view: 'blocks' } : { scenario, entityId };
+  }
   const [legacyScenario, ...legacyEntity] = value.split('/');
   if (legacyScenario && legacyEntity.length > 0 && isScenario(legacyScenario)) {
     try {
@@ -45,6 +47,7 @@ function ancestorFallback(source: CaptureDocument, target: CaptureDocument, enti
 }
 export function resolveScenarioSelection(selection: ExplorerSelection, scenario: ExplorerScenario, documents: Documents): ExplorerSelection {
   const target = documents[scenario], targetMap = mapEntities(target);
+  if (selection.view === 'blocks') return { scenario, entityId: rootOf(target).id, view: 'blocks' };
   if (targetMap.has(selection.entityId)) return { scenario, entityId: selection.entityId };
   const source = documents[selection.scenario].entities.some(entity => entity.id === selection.entityId) ? documents[selection.scenario] : documents[selection.scenario === 'prefill' ? 'decode' : 'prefill'];
   return { scenario, entityId: ancestorFallback(source, target, selection.entityId) };
@@ -116,7 +119,10 @@ function renderStatus(root: HTMLElement, selection: ExplorerSelection, reason: S
   const status = root.querySelector<HTMLElement>('.explorer__status');
   const entity = document.entities.find(entity => entity.id === selection.entityId);
   const messages = { selected: '선택됨', 'invalid-route': '유효하지 않은 선택 경로입니다. 표시 가능한 항목으로 이동했습니다.', 'ancestor-fallback': '이 scenario에 이전 항목이 없어 가장 가까운 상위 항목으로 이동했습니다.' };
-  if (status && entity) { status.dataset.reason = reason; status.textContent = `${messages[reason]} · ${entityLabel(entity)} · ${selection.scenario}`; status.setAttribute('aria-description', selection.entityId); }
+  if (status && entity) {
+    const name = selection.view === 'blocks' ? `Mamba block × ${document.entities.filter(item => item.kind === 'block').length}` : entityLabel(entity);
+    status.dataset.reason = reason; status.textContent = `${messages[reason]} · ${name} · ${selection.scenario}`; status.setAttribute('aria-description', selection.entityId);
+  }
 }
 const isContentAnchor = (hash: string): boolean => hash.length > 1 && !/(?:^#|&)(?:scenario|entity)=|^#(?:prefill|decode)\//.test(hash);
 
@@ -145,28 +151,35 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   const render = (): void => {
     if (destroyed) return;
     const active = document.activeElement, focusKey = active && host.contains(active) ? active.getAttribute('data-focus-key') : null;
-    host.dataset.scenario = current.scenario; host.dataset.entityId = current.entityId;
+    host.dataset.scenario = current.scenario; host.dataset.entityId = current.entityId; host.dataset.view = current.view ?? 'entity';
     renderBreadcrumbs(host, documents[current.scenario], current.entityId, selectEntity); renderHierarchy(host, documents[current.scenario], current.entityId, query, selectEntity);
-    renderBlockFlow(blockFlow, buildBlockFlowModel(documents[current.scenario], current.entityId), selectEntity);
-    const graph = buildGraphModel(documents[current.scenario], current.entityId);
-    evidenceSummary.textContent = `전체 tensor / edge 데이터 · ${graph.nodes.length} nodes · ${graph.edges.length} edges`;
-    graphCleanup(); graphCleanup = renderGraph(graphHost, document, graph, selectEntity); renderStatus(host, current, reason, documents[current.scenario]);
-    const selected = mapEntities(documents[current.scenario]).get(current.entityId)!;
-    const boundary = element(document, 'p', 'explorer__boundary');
-    boundary.dataset.entityId = selected.id; boundary.dataset.kind = selected.kind; boundary.dataset.scenario = current.scenario;
-    const kinds = { model: '모델', block: '블록', stage: '단계', operator: '연산자' };
-    for (const [role, text] of [
-      ['scope', `선택한 ${kinds[selected.kind]}의 경계에서`],
-      ['input', '입력은 들어오는 텐서,'],
-      ['output', '출력은 나가는 텐서,'],
-      ['weight', '가중치는 참조하는 매개변수입니다.'],
-    ] as const) {
-      const clause = element(document, 'span', 'explorer__boundary-clause');
-      clause.dataset.boundaryClause = role; clause.textContent = text;
-      if (boundary.childNodes.length > 0) boundary.append(' ');
-      boundary.append(clause);
+    renderBlockFlow(blockFlow, buildBlockFlowModel(documents[current.scenario], current.entityId, current.view === 'blocks'), selectEntity, selectBlocks);
+    graphCleanup(); graphCleanup = (): void => undefined;
+    evidence.hidden = current.view === 'blocks';
+    if (current.view === 'blocks') {
+      evidence.open = false; evidenceSummary.textContent = '';
+    } else {
+      const graph = buildGraphModel(documents[current.scenario], current.entityId);
+      evidenceSummary.textContent = `전체 tensor / edge 데이터 · ${graph.nodes.length} nodes · ${graph.edges.length} edges`;
+      graphCleanup = renderGraph(graphHost, document, graph, selectEntity);
+      const selected = mapEntities(documents[current.scenario]).get(current.entityId)!;
+      const boundary = element(document, 'p', 'explorer__boundary');
+      boundary.dataset.entityId = selected.id; boundary.dataset.kind = selected.kind; boundary.dataset.scenario = current.scenario;
+      const kinds = { model: '모델', block: '블록', stage: '단계', operator: '연산자' };
+      for (const [role, text] of [
+        ['scope', `선택한 ${kinds[selected.kind]}의 경계에서`],
+        ['input', '입력은 들어오는 텐서,'],
+        ['output', '출력은 나가는 텐서,'],
+        ['weight', '가중치는 참조하는 매개변수입니다.'],
+      ] as const) {
+        const clause = element(document, 'span', 'explorer__boundary-clause');
+        clause.dataset.boundaryClause = role; clause.textContent = text;
+        if (boundary.childNodes.length > 0) boundary.append(' ');
+        boundary.append(clause);
+      }
+      graphHost.insertBefore(boundary, graphHost.querySelector('.graph-viewport'));
     }
-    graphHost.insertBefore(boundary, graphHost.querySelector('.graph-viewport'));
+    renderStatus(host, current, reason, documents[current.scenario]);
     if (focusKey) {
       const actions = [...host.querySelectorAll<HTMLElement | SVGElement>('[data-focus-key]')];
       const replacement = actions.find(node => node.getAttribute('data-focus-key') === focusKey) ?? actions.find(node => node.getAttribute('data-entity-id') === current.entityId);
@@ -179,13 +192,14 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
     if (destroyed) return;
     closeBlockChoices();
     reason = nextReason;
-    if (next.scenario === current.scenario && next.entityId === current.entityId) { canonicalize(); renderStatus(host, current, reason, documents[current.scenario]); if (activate) onSelection(current, true); return; }
+    if (next.scenario === current.scenario && next.entityId === current.entityId && next.view === current.view) { canonicalize(); renderStatus(host, current, reason, documents[current.scenario]); if (activate) onSelection(current, true); return; }
     current = next;
     if (push && view) view.history.pushState({ ...next }, '', encodeSelectionHash(next)); else canonicalize();
     handledHash = view?.location.hash ?? '';
     render(); onSelection(current, activate);
   };
   function selectEntity(entityId: string): void { const next = resolveScenarioSelection({ scenario: current.scenario, entityId }, current.scenario, documents); apply(next, true, next.entityId === entityId ? 'selected' : 'invalid-route', true); }
+  function selectBlocks(): void { apply({ scenario: current.scenario, entityId: rootOf(documents[current.scenario]).id, view: 'blocks' }, true, 'selected'); }
   const setScenario = (scenario: ExplorerScenario): void => { const next = resolveScenarioSelection(current, scenario, documents); apply(next, true, next.entityId === current.entityId ? 'selected' : 'ancestor-fallback'); };
   const navigate = (): void => {
     const hash = view?.location.hash ?? ''; if (hash === handledHash) return;

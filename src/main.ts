@@ -171,7 +171,7 @@ function connectInspectorPane(refs: ReturnType<typeof shell>): (activate: boolea
   refs.dialog.addEventListener('close', () => {
     refs.toggle.setAttribute('aria-expanded', 'false')
     if (compact.matches) {
-      const target = returnFocus?.isConnected ? returnFocus : refs.explorer.querySelector<HTMLElement>('.breadcrumbs [aria-current="page"]')
+      const target = returnFocus?.isConnected ? returnFocus : refs.explorer.querySelector<HTMLElement>('.representative-block__toggle[aria-current="page"]') ?? refs.explorer.querySelector<HTMLElement>('.breadcrumbs [aria-current="page"]')
       target?.focus({ preventScroll: true })
     }
   })
@@ -206,6 +206,22 @@ async function start(root: HTMLElement): Promise<void> {
   const select = (selection: ExplorerSelection, activate: boolean): void => {
     refs.buttons.prefill.setAttribute('aria-pressed', String(selection.scenario === 'prefill'))
     refs.buttons.decode.setAttribute('aria-pressed', String(selection.scenario === 'decode'))
+    refs.inspector.dataset.view = selection.view ?? 'entity'
+    if (selection.view === 'blocks') {
+      const count = data.documents[selection.scenario].entities.filter(entity => entity.kind === 'block').length
+      const name = `Mamba block × ${count}`
+      refs.inspector.replaceChildren(); refs.inspector.scrollTop = 0
+      refs.inspector.dataset.entityId = selection.entityId; refs.inspector.dataset.scenario = selection.scenario
+      const header = element('header', 'inspector__header block-picker-summary')
+      const identity = element('p', 'inspector__identity'); identity.textContent = `블록 선택 / ${selection.scenario}`
+      const heading = element('h2', 'inspector__title'); heading.id = 'inspector-selection'; heading.textContent = name
+      const instruction = element('p', 'inspector__summary'); instruction.textContent = '목록에서 블록을 선택하면 해당 블록의 연산과 텐서 정보를 표시합니다.'
+      header.append(identity, heading, instruction); refs.inspector.append(header)
+      refs.status.textContent = `선택됨 · ${name} · ${selection.scenario}`
+      refs.status.setAttribute('aria-description', selection.entityId)
+      if (refs.dialog.open) refs.dialog.close()
+      return
+    }
     const model = buildInspectorModel(data.documents[selection.scenario], selection.entityId)
     refs.status.textContent = `선택됨 · ${entityLabel(model.entity)} · ${selection.scenario}`
     refs.status.setAttribute('aria-description', selection.entityId)

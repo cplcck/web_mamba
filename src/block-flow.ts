@@ -1,7 +1,7 @@
 import type { CaptureDocument, Entity } from './schema';
 import { entityLabel } from './entity-label';
 
-export function buildBlockFlowModel(document: CaptureDocument, selectedId: string) {
+export function buildBlockFlowModel(document: CaptureDocument, selectedId: string, blocksSelected = false) {
   const entities = new Map(document.entities.map(entity => [entity.id, entity]));
   const path: Entity[] = [];
   let ancestor = entities.get(selectedId);
@@ -17,14 +17,16 @@ export function buildBlockFlowModel(document: CaptureDocument, selectedId: strin
   const root = document.entities.find(entity => entity.parentId === null);
   const architecture = children(root).filter(entity => entity.kind !== 'block' || entity === blocks[0])
     .map(entity => entity.kind === 'block' ? { kind: 'blocks' as const } : { kind: 'entity' as const, entity });
-  return { selectedId, root, architecture, blocks, block, stage, stages: children(block), operators: children(stage),
+  return { selectedId, blocksSelected, root, architecture, blocks, block, stage, stages: children(block), operators: children(stage),
     blockOperatorCount: countOperators(block), stageOperatorCount: countOperators(stage) };
 }
 
 type BlockFlowModel = ReturnType<typeof buildBlockFlowModel>;
 
-export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select: (id: string) => void): void {
+export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select: (id: string) => void, selectBlocks: () => void): void {
   const document = host.ownerDocument;
+  const expanded = model.blocksSelected && (host.dataset.view !== 'blocks' || host.querySelector('.representative-block__toggle')?.getAttribute('aria-expanded') === 'true');
+  host.dataset.view = model.blocksSelected ? 'blocks' : 'entity';
   const scrollLeft = host.querySelector('.stage-reel')?.scrollLeft ?? 0;
   host.replaceChildren();
   const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = ''): HTMLElementTagNameMap[K] => {
@@ -34,7 +36,7 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
     const node = element('button', className); node.type = 'button'; node.dataset.entityId = entity.id;
     node.dataset.focusKey = `${className}:${entity.id}`;
     node.setAttribute('aria-description', `${entity.kind} ${entity.id}`);
-    node.setAttribute('aria-current', entity.id === model.selectedId ? 'page' : 'false');
+    node.setAttribute('aria-current', !model.blocksSelected && entity.id === model.selectedId ? 'page' : 'false');
     node.textContent = entityLabel(entity); node.addEventListener('click', () => select(entity.id)); return node;
   };
   const architecture = element('section', 'model-architecture'); architecture.setAttribute('aria-label', 'Model architecture');
@@ -44,7 +46,7 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
   const flow = element('ol', 'model-flow'); flow.setAttribute('aria-label', 'Model architecture order');
   const toggle = element('button', 'representative-block__toggle'); toggle.type = 'button';
   toggle.dataset.focusKey = 'representative-block'; toggle.setAttribute('aria-controls', 'block-choices');
-  toggle.setAttribute('aria-current', model.block ? 'step' : 'false');
+  toggle.setAttribute('aria-current', model.blocksSelected ? 'page' : model.block ? 'step' : 'false');
   const toggleState = element('span', 'model-card__detail');
   toggle.append(element('strong', 'model-card__name', `Mamba block × ${model.blocks.length}`), toggleState);
   const labels: Readonly<Record<string, string>> = { 'model/embedding': 'Embedding', 'model/final-normalization': 'Final Norm', 'model/final-projection': 'Output' };
@@ -66,7 +68,11 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
     toggle.setAttribute('aria-expanded', String(open)); choices.hidden = !open;
     toggleState.textContent = `${open ? '▾' : '▸'} ${open ? '블록 선택' : '블록 펼치기'}`;
   };
-  setExpanded(false); toggle.addEventListener('click', () => setExpanded(choices.hidden === true));
+  setExpanded(expanded);
+  toggle.addEventListener('click', () => {
+    if (model.blocksSelected) setExpanded(choices.hidden === true);
+    else selectBlocks();
+  });
   for (const block of model.blocks) {
     const choice = element('button', 'block-choice', block.id); choice.type = 'button'; choice.dataset.entityId = block.id;
     choice.setAttribute('aria-pressed', String(block.id === model.block?.id));
