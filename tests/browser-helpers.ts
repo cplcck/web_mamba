@@ -160,6 +160,29 @@ export async function allEntities(page: Page) {
         const advanced = inspector.querySelector<HTMLDetailsElement>('.inspector-advanced')!;
         must(!advanced.open, 'advanced starts closed on every selection');
         eq(inspector.querySelectorAll('.tensor-row').length, 0, 'no full-field dump in default view');
+        const explanation = inspector.querySelector<HTMLElement>('.operator-explanation');
+        if (entity.kind === 'operator') {
+          must(explanation, 'every captured operator has an explanation');
+          eq(explanation?.dataset.op, tensors.get(entity.outputTensorIds[0] ?? '')?.op, 'explanation opcode');
+          for (const [side, ids] of [
+            ['inputs', [...new Set([...entity.inputTensorIds, ...entity.weightTensorIds])]],
+            ['outputs', entity.outputTensorIds],
+          ] as const) {
+            const operands = [...inspector.querySelectorAll<HTMLElement>(`.operator-transition__${side} .operator-operand`)];
+            eq(operands.map(row => row.dataset.tensorId), ids, 'all explanation operands');
+            for (const [index, id] of ids.entries()) {
+              const tensor = tensors.get(id);
+              must(tensor, 'explanation source exists');
+              const row = operands[index];
+              eq(row?.querySelector('[data-field=name]')?.textContent, tensor?.name, 'explanation tensor name');
+              eq(row?.querySelector('[data-field=shape]')?.textContent, tuple(tensor?.nativeShape ?? []), 'explanation native shape');
+              eq(row?.querySelector('[data-field=numel]')?.textContent, tensor?.numel.toLocaleString('en-US'), 'explanation element count');
+              eq(row?.querySelector('[data-field=dtype]')?.textContent, tensor?.dtype, 'explanation dtype');
+            }
+          }
+        } else {
+          eq(explanation, null, 'operator explanation is not attached to other entity kinds');
+        }
         for (const kind of ['inputs', 'outputs', 'weights'] as const) {
           const key = kind === 'inputs' ? 'inputTensorIds' : kind === 'outputs' ? 'outputTensorIds' : 'weightTensorIds';
           const referenced = entity[key].map(id => tensors.get(id)!);

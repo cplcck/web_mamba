@@ -2,6 +2,7 @@
 import { evalFormula, SchemaError, storageAccounting, type CaptureDocument, type Entity, type Tensor } from './schema'
 import type { PublicBundle } from './public-data'
 import { entityLabel } from './entity-label'
+import { buildOperatorExplanation, type OperatorExplanation, type OperatorOperand } from './operator-explanation'
 
 export const INSPECTOR_SECTION_KINDS = ['inputs', 'outputs', 'weights'] as const
 export type InspectorSectionKind = (typeof INSPECTOR_SECTION_KINDS)[number]
@@ -53,6 +54,7 @@ export type InspectorModel = {
   readonly entity: Entity
   readonly sections: readonly InspectorSection[]
   readonly accounting: ReturnType<typeof storageAccounting>
+  readonly explanation: OperatorExplanation | null
 }
 
 export type ByteDisplay = {
@@ -206,7 +208,7 @@ export function buildInspectorModel(document: CaptureDocument, entityId: string)
   }))
   const referencedIds = new Set([...entity.inputTensorIds, ...entity.outputTensorIds, ...entity.weightTensorIds])
   const referencedTensors = document.tensors.filter(tensor => referencedIds.has(tensor.id))
-  return { document, entity, sections, accounting: storageAccounting(referencedTensors) }
+  return { document, entity, sections, accounting: storageAccounting(referencedTensors), explanation: buildOperatorExplanation(document, entity) }
 }
 
 export function buildInspectorSummary(model: InspectorModel) {
@@ -241,35 +243,95 @@ const STAGE_ROLES: Readonly<Record<string, string>> = {
   residual: '블록 입력을 더해 다음 블록으로 전달합니다.',
 }
 
-const OPERATOR_ROLES: Readonly<Record<string, string>> = {
-  ADD: '입력 텐서들을 원소별로 더합니다.',
-  MUL: '입력 텐서들을 원소별로 곱합니다.',
-  MUL_MAT: '행렬 곱으로 입력 특징을 투영합니다.',
-  RMS_NORM: '입력의 RMS 크기를 기준으로 정규화합니다.',
-  GET_ROWS: '입력 인덱스에 해당하는 행을 가져옵니다.',
-  RESHAPE: '값을 바꾸지 않고 텐서의 차원 구성을 바꿉니다.',
-  VIEW: '기존 텐서의 일부를 새 모양으로 참조합니다.',
-  TRANSPOSE: '텐서의 축 순서를 바꿉니다.',
-  CONT: '텐서를 연속된 배치로 정리합니다.',
-  CPY: '입력 값을 대상 텐서로 복사합니다.',
-  CONCAT: '입력 텐서들을 지정된 축으로 이어 붙입니다.',
-  SCALE: '각 원소에 스칼라 배율을 적용합니다.',
-  UNARY: '각 원소에 단항 함수를 적용합니다.',
-  GLU: '게이트로 특징의 전달량을 조절합니다.',
-  SSM_CONV: '이전 이력과 현재 입력에 convolution을 적용합니다.',
-  SSM_SCAN: '입력에 따라 순환 상태와 출력을 계산합니다.',
-}
-
 function roleExplanation(model: InspectorModel): string {
   switch (model.entity.kind) {
     case 'model': return '토큰을 임베딩하고 24개 Mamba 블록을 거쳐 어휘별 logits를 만듭니다.'
     case 'block': return '입력을 정규화한 뒤 convolution과 순환 상태를 갱신하고 잔차 출력을 만듭니다.'
     case 'stage': return STAGE_ROLES[model.entity.id.split('/').at(-1) ?? ''] ?? '선택한 단계의 입력을 처리해 다음 단계로 전달합니다.'
     case 'operator': {
-      const op = model.document.tensors.find(tensor => model.entity.outputTensorIds.includes(tensor.id))?.op
-      return `${op ?? 'GGML'} · ${OPERATOR_ROLES[op ?? ''] ?? '선택한 입력에서 출력 텐서를 만듭니다.'}`
+      return model.explanation ? `${model.explanation.op} / ${model.explanation.summary}` : '캡처에 연산 설명 정보가 없습니다.'
     }
   }
+}
+
+function renderOperatorExplanation(host: HTMLElement, explanation: OperatorExplanation): void {
+  const panel = element('section', 'operator-explanation'); panel.dataset.op = explanation.op
+  const title = element('h3', 'operator-explanation__title'); title.id = 'operator-transformation'; title.textContent = '입력 → 처리 → 출력'
+  panel.setAttribute('aria-labelledby', title.id)
+  const shapeNote = element('p', 'operator-explanation__shape-note')
+  shapeNote.textContent = 'shape는 GGML 축 0~3의 길이입니다. 네 수를 곱하면 전체 숫자 개수가 됩니다. 개별 숫자값은 이 캡처에 포함되지 않습니다.'
+  panel.append(title, shapeNote)
+  const operands = (kind: 'inputs' | 'outputs', label: string, values: readonly OperatorOperand[]): void => {
+    const group = element('div', `operator-transition__${kind}`)
+    const heading = element('h4', 'operator-transition__heading'); heading.textContent = label; group.append(heading)
+    for (const operand of values) {
+      const tensor = operand.tensor, row = element('article', 'operator-operand')
+      row.dataset.tensorId = tensor.id; row.dataset.role = tensor.role
+      const usage = element('p', 'operator-operand__label'); usage.textContent = operand.label
+      const field = (key: string, value: string): HTMLElement => {
+        const node = element('span'); node.dataset.field = key; node.textContent = value; return node
+      }
+      const name = element('p', 'operator-operand__name'); name.append('tensor name : ', field('name', tensor.name))
+      const shape = element('p', 'operator-operand__shape'); shape.append('shape : ', field('shape', formatTuple(tensor.nativeShape)))
+      const count = element('p', 'operator-operand__count')
+      count.append('숫자 개수 : ', field('numel', tensor.numel.toLocaleString('en-US')), ' / ', field('dtype', tensor.dtype))
+      row.append(usage, name, shape, count); group.append(row)
+    }
+    panel.append(group)
+  }
+  operands('inputs', '입력 (변경 전)', explanation.inputs)
+  const processing = element('h4', 'operator-transition__heading'); processing.textContent = '처리'
+  const operation = element('p', 'operator-explanation__operation'); operation.textContent = explanation.operation
+  panel.append(processing, operation)
+  const effect = explanation.facts.find(fact => fact.key === 'effect')?.value
+  const effectText = effect === 'metadata-only' ? '숫자를 복사하거나 계산하지 않고, 모양이나 참조 방식만 바꿉니다.'
+    : effect === 'copy' ? '필요한 숫자를 읽어 결과 또는 지정된 저장 공간에 기록합니다.'
+      : effect === 'compute' ? '숫자에 계산을 적용합니다. 모양이 같아도 값이 같다는 뜻은 아닙니다.' : ''
+  if (effectText) { const note = element('p', 'operator-explanation__effect'); note.textContent = effectText; panel.append(note) }
+  operands('outputs', '출력 (변경 후)', explanation.outputs)
+  if (explanation.outputs.every(operand => operand.tensor.numel === 0)) {
+    const empty = element('p', 'operator-explanation__effect')
+    empty.textContent = '출력에 담긴 숫자는 0개입니다. 연산 노드는 기록되어 있지만 출력은 빈 텐서입니다.'
+    panel.append(empty)
+  }
+  const primaryFacts: Readonly<Record<string, readonly string[]>> = {
+    GET_ROWS: ['availableRows', 'rowWidth', 'indexCount'], RESHAPE: [], VIEW: ['sourceOffsetBytes'],
+    SCALE: ['scale', 'bias'], CPY: [], RMS_NORM: ['normalizationWidth', 'epsilon'],
+    MUL: ['broadcastAxes'], ADD: ['broadcastAxes'], MUL_MAT: ['reductionSize', 'outputAxis0Size', 'outputAxis1Size'],
+    TRANSPOSE: ['axisPermutation'], CONCAT: ['concatAxis'], SSM_CONV: ['kernelWidth', 'historyWidth', 'tokenCount'],
+    SSM_SCAN: ['tokenCount', 'activationNumel', 'stateNumel'], CONT: ['inputStridesBytes', 'outputStridesBytes'],
+    UNARY: ['subtype'], GLU: ['subtype'],
+  }
+  const previewKeys = primaryFacts[explanation.op] ?? []
+  const renderFacts = (target: HTMLElement, values: OperatorExplanation['facts']): void => {
+    if (!values.length) return
+    const facts = element('dl', 'operator-explanation__facts')
+    const meanings: Readonly<Record<string, string>> = {
+      unavailable: '캡처에 없음', unknown: '알 수 없음', captured: '캡처에서 확인',
+      equal: '같음', different: '다름', 'metadata-only': '모양·참조 정보 변경',
+      copy: '복사·선택', compute: '숫자 계산', separate: '별도의 입력', packed: '한 입력에 묶여 있음',
+    }
+    for (const fact of values) {
+      const row = element('div'); row.dataset.fact = fact.key
+      const label = element('dt'); label.textContent = fact.label
+      const value = element('dd')
+      value.textContent = typeof fact.value === 'string' ? meanings[fact.value] ?? fact.value
+        : typeof fact.value === 'number' ? String(fact.value) : formatTuple(fact.value)
+      row.append(label, value); facts.append(row)
+    }
+    target.append(facts)
+  }
+  renderFacts(panel, explanation.facts.filter(fact => previewKeys.includes(fact.key)))
+  const detailFacts = explanation.facts.filter(fact => !previewKeys.includes(fact.key))
+  if (detailFacts.length || explanation.notes.length) {
+    const details = element('details', 'operator-explanation__details')
+    const summary = element('summary'); summary.textContent = '계산 기준과 참조 정보 자세히 보기'; details.append(summary)
+    renderFacts(details, detailFacts)
+    const notes = element('ul', 'operator-explanation__notes')
+    for (const note of explanation.notes) { const item = element('li'); item.textContent = note; notes.append(item) }
+    details.append(notes); panel.append(details)
+  }
+  host.append(panel)
 }
 
 function renderSummaryTensor(host: HTMLElement, tensor: InspectorTensor): void {
@@ -448,6 +510,7 @@ export function renderInspector(host: HTMLElement, model: InspectorModel, bundle
   const summary = element('p', 'inspector__summary')
   summary.textContent = roleExplanation(model)
   header.append(summary); host.append(header)
+  if (model.explanation) renderOperatorExplanation(host, model.explanation)
   const compact = buildInspectorSummary(model)
   for (const section of compact.sections) {
     const group = element('section', `summary-section summary-section--${section.kind}`)

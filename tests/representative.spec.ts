@@ -13,7 +13,7 @@ test('operators display opcodes without capture indices and retain independent s
   if (!stage) throw new Error('Final normalization fixture missing');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`./#scenario=prefill&entity=${encodeURIComponent(stage.id)}`); await mounted(page);
-  expect(await page.locator('.operator-choice').allTextContents()).toEqual(['rms_norm', 'mul']);
+  expect(await page.locator('.operator-choice .operator-name').allTextContents()).toEqual(['rms_norm', 'mul']);
   // When / Then: shortened names do not change individual operator actions.
   for (const id of stage.children) {
     const entity = capture.entities.find(entity => entity.id === id);
@@ -40,7 +40,7 @@ test('operators display opcodes without capture indices and retain independent s
   // Original IDs remain searchable while the result name shows only the opcode.
   await arm(page, '.hierarchy__search-status', 'data-result-count', '1');
   await page.locator('.hierarchy__search').fill(stage.children[0] ?? ''); await changed(page);
-  expect(await page.locator('.hierarchy__row').allTextContents()).toEqual(['rms_norm']);
+  expect(await page.locator('.hierarchy__row .operator-name').allTextContents()).toEqual(['rms_norm']);
 });
 
 test('navigation accessible names include their visible labels', async ({ page }) => {

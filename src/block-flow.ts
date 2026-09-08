@@ -1,5 +1,6 @@
 import type { CaptureDocument, Entity } from './schema';
 import { entityLabel } from './entity-label';
+import { operatorSummary } from './operator-explanation';
 
 export function buildBlockFlowModel(document: CaptureDocument, selectedId: string, blocksSelected = false) {
   const entities = new Map(document.entities.map(entity => [entity.id, entity]));
@@ -17,7 +18,7 @@ export function buildBlockFlowModel(document: CaptureDocument, selectedId: strin
   const root = document.entities.find(entity => entity.parentId === null);
   const architecture = children(root).filter(entity => entity.kind !== 'block' || entity === blocks[0])
     .map(entity => entity.kind === 'block' ? { kind: 'blocks' as const } : { kind: 'entity' as const, entity });
-  return { selectedId, blocksSelected, root, architecture, blocks, block, stage, stages: children(block), operators: children(stage),
+  return { document, selectedId, blocksSelected, root, architecture, blocks, block, stage, stages: children(block), operators: children(stage),
     blockOperatorCount: countOperators(block), stageOperatorCount: countOperators(stage) };
 }
 
@@ -134,7 +135,13 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
     title.append(element('span', 'operator-total__value', String(model.stageOperatorCount)));
     detail.append(title);
     const operators = element('ol', 'operator-choices');
-    for (const operator of model.operators) { const item = element('li', 'operator-choices__item'); item.append(action(operator, 'operator-choice')); operators.append(item); }
+    for (const operator of model.operators) {
+      const item = element('li', 'operator-choices__item'), choice = action(operator, 'operator-choice');
+      const output = model.document.tensors.find(tensor => operator.outputTensorIds.includes(tensor.id));
+      choice.replaceChildren(element('span', 'operator-name', entityLabel(operator)), ' ',
+        element('span', 'operator-description', operatorSummary(output)));
+      item.append(choice); operators.append(item);
+    }
     detail.append(operators); host.append(detail);
   }
 }

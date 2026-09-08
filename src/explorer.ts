@@ -2,6 +2,7 @@ import { buildGraphModel, renderGraph } from './graph';
 import { buildBlockFlowModel, renderBlockFlow } from './block-flow';
 import type { CaptureDocument, Entity } from './schema';
 import { entityLabel } from './entity-label';
+import { operatorSummary } from './operator-explanation';
 
 export type ExplorerScenario = 'prefill' | 'decode';
 export type ExplorerSelection = Readonly<{ scenario: ExplorerScenario; entityId: string; view?: 'blocks' }>;
@@ -102,7 +103,10 @@ function renderHierarchy(root: HTMLElement, document: CaptureDocument, selectedI
     row.dataset.entityId = entity.id; row.dataset.focusKey = `hierarchy:${entity.id}`;
     row.setAttribute('aria-description', `${entity.kind} ${entity.id}`); row.setAttribute('aria-current', entity.id === selectedId ? 'page' : 'false');
     row.classList.toggle('hierarchy__row--selected', entity.id === selectedId);
-    row.textContent = entityLabel(entity); row.addEventListener('click', () => select(entity.id)); item.append(row);
+    const name = element(nav.ownerDocument, 'span', 'operator-name'); name.textContent = entityLabel(entity);
+    const description = element(nav.ownerDocument, 'span', 'operator-description');
+    description.textContent = operatorSummary(document.tensors.find(tensor => entity.outputTensorIds.includes(tensor.id)));
+    row.append(name, ' ', description); row.addEventListener('click', () => select(entity.id)); item.append(row);
     for (const match of matches.filter(match => match.matchKind === 'tensor')) { const text = element(nav.ownerDocument, 'span', 'hierarchy__match'); text.dataset.matchKind = match.matchKind; text.textContent = match.matchText; row.append(text); }
     parent.append(item);
   };
