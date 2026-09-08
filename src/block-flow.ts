@@ -12,17 +12,19 @@ export function buildBlockFlowModel(document: CaptureDocument, selectedId: strin
   const children = (entity: Entity | undefined): readonly Entity[] => (entity?.children ?? []).flatMap(id => {
     const child = entities.get(id); return child ? [child] : [];
   });
+  const countOperators = (entity: Entity | undefined): number => entity?.kind === 'operator'
+    ? 1 : children(entity).reduce((total, child) => total + countOperators(child), 0);
   const root = document.entities.find(entity => entity.parentId === null);
   const architecture = children(root).filter(entity => entity.kind !== 'block' || entity === blocks[0])
     .map(entity => entity.kind === 'block' ? { kind: 'blocks' as const } : { kind: 'entity' as const, entity });
-  return { selectedId, root, architecture, blocks, block, stage, stages: children(block), operators: children(stage) };
+  return { selectedId, root, architecture, blocks, block, stage, stages: children(block), operators: children(stage),
+    blockOperatorCount: countOperators(block), stageOperatorCount: countOperators(stage) };
 }
 
 type BlockFlowModel = ReturnType<typeof buildBlockFlowModel>;
 
 export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select: (id: string) => void): void {
   const document = host.ownerDocument;
-  const expanded = host.querySelector('.representative-block__toggle')?.getAttribute('aria-expanded') === 'true';
   const scrollLeft = host.querySelector('.stage-reel')?.scrollLeft ?? 0;
   host.replaceChildren();
   const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = ''): HTMLElementTagNameMap[K] => {
@@ -64,7 +66,7 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
     toggle.setAttribute('aria-expanded', String(open)); choices.hidden = !open;
     toggleState.textContent = `${open ? '▾' : '▸'} ${open ? '블록 선택' : '블록 펼치기'}`;
   };
-  setExpanded(expanded); toggle.addEventListener('click', () => setExpanded(choices.hidden === true));
+  setExpanded(false); toggle.addEventListener('click', () => setExpanded(choices.hidden === true));
   for (const block of model.blocks) {
     const choice = element('button', 'block-choice', block.id); choice.type = 'button'; choice.dataset.entityId = block.id;
     choice.setAttribute('aria-pressed', String(block.id === model.block?.id));
@@ -79,7 +81,8 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
     const outline = element('section', 'block-detail'); outline.setAttribute('aria-label', `실제 데이터 · ${model.block.id}`);
     const flowHeading = element('div', 'stage-flow__heading');
     const overview = action(model.block, 'block-overview');
-    overview.textContent = `${model.block.id} · 실제 데이터 / 전체 경계`;
+    overview.textContent = `${model.block.id} / total operators : `;
+    overview.append(element('span', 'operator-total__value', String(model.blockOperatorCount)));
     const hint = element('p', 'stage-flow__hint', `${model.stages.length} stages → 가로 스크롤 · 방향키로 이동 · 단계 선택`);
     hint.id = 'stage-flow-hint';
     flowHeading.append(overview, hint);
@@ -121,7 +124,9 @@ export function renderBlockFlow(host: HTMLElement, model: BlockFlowModel, select
   }
   if (model.stage) {
     const detail = element('section', 'stage-detail'); detail.setAttribute('aria-label', `Operators · ${model.stage.id}`);
-    detail.append(element('h3', 'stage-detail__title', `${model.stage.id} · ${model.operators.length} operators`));
+    const title = element('h3', 'stage-detail__title', `${model.stage.id} / total operators : `);
+    title.append(element('span', 'operator-total__value', String(model.stageOperatorCount)));
+    detail.append(title);
     const operators = element('ol', 'operator-choices');
     for (const operator of model.operators) { const item = element('li', 'operator-choices__item'); item.append(action(operator, 'operator-choice')); operators.append(item); }
     detail.append(operators); host.append(detail);

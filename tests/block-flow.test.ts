@@ -6,6 +6,24 @@ import { validateDocument } from '../src/schema';
 const document = validateDocument(JSON.parse(readFileSync('public/data/prefill.json', 'utf8')));
 
 describe('representative block context', () => {
+  it.each(['block.0', 'block.23'])('counts all captured operators beneath %s, not just its stages', id => {
+    // Given / When: the actual block contains eight stages and repeated operation names.
+    const context = buildBlockFlowModel(document, id);
+    // Then: each captured operator counts once, including metadata-only operators.
+    expect(context.blockOperatorCount).toBe(50);
+  });
+
+  it.each([
+    ['model/embedding', 1],
+    ['model/final-normalization', 2],
+    ['model/final-projection', 1],
+  ] as const)('counts the operators beneath %s', (id, count) => {
+    // Given / When
+    const context = buildBlockFlowModel(document, id);
+    // Then
+    expect(context.stageOperatorCount).toBe(count);
+  });
+
   it('keeps model root free of a chosen block and block detail', () => {
     // Given / When
     const context = buildBlockFlowModel(document, 'mamba-130m');

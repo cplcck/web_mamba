@@ -135,6 +135,9 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   hierarchy.append(searchLabel, clear, searchStatus);
   const graphHost = element(document, 'figure', 'operator-graph'), status = element(document, 'p', 'explorer__status'); status.setAttribute('role', 'status');
   const blockFlow = element(document, 'div', 'block-flow');
+  const closeBlockChoices = (): void => {
+    blockFlow.querySelector<HTMLButtonElement>('.representative-block__toggle[aria-expanded="true"]')?.click();
+  };
   const evidence = document.createElement('details'); evidence.className = 'graph-evidence';
   const evidenceSummary = element(document, 'summary', 'graph-evidence__summary');
   evidence.append(evidenceSummary, graphHost);
@@ -174,6 +177,7 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   const canonicalize = (): void => { if (view && view.location.hash !== encodeSelectionHash(current)) view.history.replaceState({ ...current }, '', encodeSelectionHash(current)); handledHash = view?.location.hash ?? ''; };
   const apply = (next: ExplorerSelection, push: boolean, nextReason: SelectionReason, activate = false): void => {
     if (destroyed) return;
+    closeBlockChoices();
     reason = nextReason;
     if (next.scenario === current.scenario && next.entityId === current.entityId) { canonicalize(); renderStatus(host, current, reason, documents[current.scenario]); if (activate) onSelection(current, true); return; }
     current = next;
@@ -191,8 +195,15 @@ export function createExplorer(host: HTMLElement, documents: Documents, onSelect
   };
   const onSearch = (): void => { query = search.value; renderHierarchy(host, documents[current.scenario], current.entityId, query, selectEntity); };
   const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape' && document.activeElement === search) { search.value = ''; query = ''; onSearch(); } };
+  const onOtherAction = (event: Event): void => {
+    if (!(event.target instanceof Element)) return;
+    const action = event.target.closest('button, [role="button"], summary');
+    if (!action || action.classList.contains('representative-block__toggle')) return;
+    closeBlockChoices();
+  };
+  document.addEventListener('click', onOtherAction, true);
   search.addEventListener('input', onSearch); search.addEventListener('keydown', onKey); view?.addEventListener('popstate', navigate); view?.addEventListener('hashchange', navigate);
   if (!isContentAnchor(view?.location.hash ?? '')) canonicalize();
   render(); onSelection(current, current.entityId !== landingId);
-  return { setScenario, selectEntity, destroy: () => { if (destroyed) return; destroyed = true; graphCleanup(); search.removeEventListener('input', onSearch); search.removeEventListener('keydown', onKey); view?.removeEventListener('popstate', navigate); view?.removeEventListener('hashchange', navigate); host.replaceChildren(); host.classList.remove('explorer'); } };
+  return { setScenario, selectEntity, destroy: () => { if (destroyed) return; destroyed = true; graphCleanup(); document.removeEventListener('click', onOtherAction, true); search.removeEventListener('input', onSearch); search.removeEventListener('keydown', onKey); view?.removeEventListener('popstate', navigate); view?.removeEventListener('hashchange', navigate); host.replaceChildren(); host.classList.remove('explorer'); } };
 }
